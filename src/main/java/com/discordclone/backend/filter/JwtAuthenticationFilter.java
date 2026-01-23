@@ -1,6 +1,6 @@
 package com.discordclone.backend.filter;
 
-import com.discordclone.backend.service.Jwt.JwtService;
+import com.discordclone.backend.service.jwt.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

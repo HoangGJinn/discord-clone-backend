@@ -6,26 +6,28 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
-@Table(name = "users")
+@Table(name="password_reset_otp")
 @Data
 @Builder
-@NoArgsConstructor
 @AllArgsConstructor
-public class User {
+@NoArgsConstructor
+public class PasswordResetOtp {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "user_id")
     private Long id;
 
-    @Column(unique = true, nullable = false)
-    private String userName;
-
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private String email;
 
-    @Column(unique = true, nullable = false)
-    private String password;
+    @Column(nullable = false)
+    private String otp;
 
+    @Column(nullable = false)
+    private LocalDateTime expireTime;
 
+    @Column(nullable = false)
+    private boolean used = false;
 }

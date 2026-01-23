@@ -1,4 +1,4 @@
-package com.discordclone.backend.service.Jwt;
+package com.discordclone.backend.service.jwt;
 
 import com.discordclone.backend.config.JwtConfig;
 import com.discordclone.backend.entity.jpa.User;
@@ -15,7 +15,7 @@ import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
-public class JwtServiceImpl implements JwtService{
+public class JwtServiceImpl implements JwtService {
     private final JwtConfig jwtConfig;
 
     private SecretKey getSigningKey() {
@@ -24,7 +24,7 @@ public class JwtServiceImpl implements JwtService{
     }
 
     @Override
-    public String generateToken(User user){
+    public String generateToken(User user) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtConfig.getJwtExpiration());
 
@@ -39,15 +39,14 @@ public class JwtServiceImpl implements JwtService{
     }
 
     @Override
-    public boolean validateToken(String token){
+    public boolean validateToken(String token) {
         try {
             Jwts.parser()
                     .verifyWith(getSigningKey())
                     .build()
                     .parseSignedClaims(token);
             return true;
-        }
-        catch (JwtException | IllegalArgumentException e) {
+        } catch (JwtException | IllegalArgumentException e) {
             return false;
         }
     }

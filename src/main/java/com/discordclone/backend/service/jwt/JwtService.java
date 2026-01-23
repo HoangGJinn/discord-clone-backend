@@ -1,4 +1,4 @@
-package com.discordclone.backend.service.Jwt;
+package com.discordclone.backend.service.jwt;
 
 import com.discordclone.backend.entity.jpa.User;
 

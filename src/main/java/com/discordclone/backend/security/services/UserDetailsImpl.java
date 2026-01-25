@@ -30,6 +30,12 @@ public class UserDetailsImpl implements UserDetails {
 
     private Collection<? extends GrantedAuthority> authorities;
 
+    @Getter
+    private Boolean isEmailVerified;
+
+    @Getter
+    private Boolean isActive;
+
     public static UserDetailsImpl build(User user) {
         List<GrantedAuthority> authorities = user.getRoles().stream()
                 .map(role -> new SimpleGrantedAuthority(role.getName().name()))
@@ -40,7 +46,9 @@ public class UserDetailsImpl implements UserDetails {
                 user.getUserName(),
                 user.getEmail(),
                 user.getPassword(),
-                authorities);
+                authorities,
+                user.getIsEmailVerified(),
+                user.getIsActive());
     }
 
     @Override

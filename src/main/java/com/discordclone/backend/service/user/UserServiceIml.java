@@ -6,6 +6,7 @@ import com.discordclone.backend.entity.jpa.Role;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.repository.RoleRepository;
 import com.discordclone.backend.repository.UserRepository;
+import com.discordclone.backend.service.otp.OtpService;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -22,6 +23,7 @@ public class UserServiceIml implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
+    private final OtpService otpService;
 
     @Override
     public Optional<User> findByUserName(String userName) {
@@ -58,11 +60,32 @@ public class UserServiceIml implements UserService {
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword().trim()))
                 .displayName(request.getDisplayName())
-                .isActive(true)
+                .isActive(false)
                 .isEmailVerified(false)
                 .roles(roles)
                 .build();
 
         userRepository.save(user);
+
+        // Sinh OTP
+        otpService.generateAndSendOtp(user.getEmail(), "VERIFY_ACCOUNT");
+    }
+
+    @Override
+    public void verifyAccount(String email, String otp) {
+        // 1. Kiểm tra OTP có đúng không (Gọi sang OtpService)
+        var otpEntity = otpService.verifyOtp(email, otp);
+
+        // 2. Tìm User
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with email: " + email));
+
+        // 3. Kích hoạt tài khoản
+        user.setIsActive(true);
+        user.setIsEmailVerified(true);
+        userRepository.save(user);
+
+        // 4. Đánh dấu OTP đã dùng
+        otpService.markOtpAsUsed(otpEntity);
     }
 }

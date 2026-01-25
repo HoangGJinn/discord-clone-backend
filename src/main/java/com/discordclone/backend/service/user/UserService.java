@@ -13,4 +13,6 @@ public interface UserService {
     void updatePassword(User user, String newPassword);
 
     void registerUser(RegisterRequest request);
+
+    void verifyAccount(String email, String otp);
 }

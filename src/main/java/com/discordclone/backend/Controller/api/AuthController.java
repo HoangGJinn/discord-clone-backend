@@ -2,7 +2,6 @@ package com.discordclone.backend.Controller.api;
 
 import com.discordclone.backend.dto.request.*;
 import com.discordclone.backend.dto.response.LoginResponse;
-import com.discordclone.backend.dto.response.RegisterResponse;
 import com.discordclone.backend.entity.jpa.PasswordResetOtp;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.exception.AccountNotActiveException;
@@ -18,7 +17,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,9 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
@@ -40,7 +36,6 @@ public class AuthController {
     private final JwtUtils jwtUtils;
     private final OtpService otpService;
 
-
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest request) {
         try {
@@ -49,8 +44,7 @@ public class AuthController {
             // Thông báo user cần check mail
             return ResponseEntity.ok(Map.of(
                     "message", "Đăng ký thành công! Vui lòng kiểm tra email để nhập mã xác thực (OTP).",
-                    "email", request.getEmail()
-            ));
+                    "email", request.getEmail()));
 
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
@@ -60,10 +54,11 @@ public class AuthController {
     }
 
     @PostMapping("/verify-account")
-    public ResponseEntity<?> verifyAccount(@RequestBody VerifyAccountRequest request) {
+    public ResponseEntity<?> verifyAccount(@Valid @RequestBody VerifyAccountRequest request) {
         try {
             userService.verifyAccount(request.getEmail(), request.getOtp());
-            return ResponseEntity.ok(Map.of("message", "Kích hoạt tài khoản thành công! Bạn có thể đăng nhập ngay bây giờ."));
+            return ResponseEntity
+                    .ok(Map.of("message", "Kích hoạt tài khoản thành công! Bạn có thể đăng nhập ngay bây giờ."));
         } catch (RuntimeException ex) { // Bắt lỗi OTP sai/hết hạn từ Service
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
@@ -89,7 +84,8 @@ public class AuthController {
                     return ResponseEntity.badRequest()
                             .body(Map.of("message", "Tài khoản đã được xác thực rồi. Bạn có thể đăng nhập ngay."));
                 }
-                // Không cần kiểm tra isActive vì user chưa verify thì isActive = false là bình thường
+                // Không cần kiểm tra isActive vì user chưa verify thì isActive = false là bình
+                // thường
             }
             // RESET_PASSWORD: không cần kiểm tra gì thêm
 
@@ -98,13 +94,13 @@ public class AuthController {
 
             return ResponseEntity.ok(Map.of(
                     "message", "Mã OTP mới đã được gửi đến email của bạn",
-                    "email", request.getEmail()
-            ));
+                    "email", request.getEmail()));
         } catch (Exception ex) {
             return ResponseEntity.badRequest()
                     .body(Map.of("message", ex.getMessage()));
         }
     }
+
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@Valid @RequestBody LoginRequest req) {
         try {

@@ -40,6 +40,7 @@ public class AuthController {
     private final JwtUtils jwtUtils;
     private final OtpService otpService;
 
+
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterRequest request) {
         try {

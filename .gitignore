@@ -1,6 +1,6 @@
 HELP.md
 target/
-.mvn/wrapper/maven-wrapper.jar
+!.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
@@ -31,3 +31,12 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### SECURITY & LOCAL CONFIG (QUAN TRỌNG) ###
+# Bỏ qua file cấu hình chứa mật khẩu
+application.properties
+src/main/resources/application.properties
+**/application.properties
+
+# Các file biến môi trường (nếu có dùng)
+.env

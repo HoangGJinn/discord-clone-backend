@@ -2,6 +2,8 @@ package com.discordclone.backend.repository;
 
 import com.discordclone.backend.entity.jpa.ServerMember;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -27,4 +29,11 @@ public interface ServerMemberRepository extends JpaRepository<ServerMember, Long
 
     // Đếm số thành viên trong server
     long countByServerId(Long serverId);
+
+    // Search gần đúng member trong server theo displayName, userName hoặc nickname
+    @Query("SELECT m FROM ServerMember m WHERE m.server.id = :serverId AND (" +
+            "LOWER(m.user.displayName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+            "LOWER(m.user.userName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+            "LOWER(m.nickname) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+    List<ServerMember> searchMembersInServer(@Param("serverId") Long serverId, @Param("keyword") String keyword);
 }

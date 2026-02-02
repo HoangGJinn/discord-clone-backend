@@ -5,7 +5,11 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -32,6 +36,22 @@ public class User {
 
     @Column(name = "display_name")
     private String displayName;
+
+    private LocalDate birthDate;
+    private String country;
+    private String pronouns;
+
+    @CreationTimestamp
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    private LocalDateTime lastActive;
+
+    @Column(columnDefinition = "TEXT")
+    private String bio;
+
+    @Column(name="avatar_url")
+    private String avatarUrl;
 
     @Column(name = "is_active")
     private Boolean isActive;

@@ -1,6 +1,7 @@
 package com.discordclone.backend.service.user;
 
 import com.discordclone.backend.dto.request.RegisterRequest;
+import com.discordclone.backend.dto.request.UpdateProfileRequest;
 import com.discordclone.backend.entity.enums.ERole;
 import com.discordclone.backend.entity.jpa.Role;
 import com.discordclone.backend.entity.jpa.User;
@@ -87,5 +88,26 @@ public class UserServiceIml implements UserService {
 
         // 4. Đánh dấu OTP đã dùng
         otpService.markOtpAsUsed(otpEntity);
+    }
+
+    @Override
+    public User updateProfile(String userName, UpdateProfileRequest request) {
+        User user = findByUserName(userName)
+                .orElseThrow(() -> new EntityNotFoundException("User not found: " + userName));
+
+        if (request.getDisplayName() != null)
+            user.setDisplayName(request.getDisplayName());
+        if (request.getBio() != null)
+            user.setBio(request.getBio());
+        if (request.getAvatarUrl() != null)
+            user.setAvatarUrl(request.getAvatarUrl());
+        if (request.getPronouns() != null)
+            user.setPronouns(request.getPronouns());
+        if (request.getCountry() != null)
+            user.setCountry(request.getCountry());
+        if (request.getBirthDate() != null)
+            user.setBirthDate(request.getBirthDate());
+
+        return userRepository.save(user);
     }
 }

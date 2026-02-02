@@ -23,4 +23,10 @@ public interface ChannelRepository extends JpaRepository<Channel, Long> {
 
     // Đếm số channel trong category
     long countByCategoryId(Long categoryId);
+
+    // Search gần đúng theo name trong server
+    List<Channel> findByServerIdAndNameContainingIgnoreCase(Long serverId, String name);
+
+    // Search gần đúng theo name (toàn bộ)
+    List<Channel> findByNameContainingIgnoreCase(String name);
 }

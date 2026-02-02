@@ -14,4 +14,10 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
 
     // Đếm số category trong server (để tính position mới)
     long countByServerId(Long serverId);
+
+    // Search gần đúng theo name trong server
+    List<Category> findByServerIdAndNameContainingIgnoreCase(Long serverId, String name);
+
+    // Search gần đúng theo name (toàn bộ)
+    List<Category> findByNameContainingIgnoreCase(String name);
 }

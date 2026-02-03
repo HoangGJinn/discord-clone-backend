@@ -1,5 +1,12 @@
 package com.discordclone.backend.service.server;
 
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import com.discordclone.backend.dto.request.CreateServerRequest;
 import com.discordclone.backend.dto.request.UpdateServerRequest;
 import com.discordclone.backend.dto.response.*;
@@ -7,13 +14,8 @@ import com.discordclone.backend.entity.enums.MemberRole;
 import com.discordclone.backend.entity.jpa.*;
 import com.discordclone.backend.exception.ResourceNotFoundException;
 import com.discordclone.backend.repository.*;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -115,6 +117,7 @@ public class ServerServiceImpl implements ServerService {
     @Transactional(readOnly = true)
     public List<ServerResponse> getUserServers(Long userId) {
         List<ServerMember> memberships = serverMemberRepository.findByUserId(userId);
+        System.out.println("DEBUG: getUserServers - UserId: " + userId + ", Memberships found: " + memberships.size());
         return memberships.stream()
                 .map(member -> mapToBasicResponse(member.getServer()))
                 .collect(Collectors.toList());

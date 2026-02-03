@@ -20,10 +20,10 @@ import java.util.List;
 public class JwtUtils {
     private static final Logger logger = LoggerFactory.getLogger(JwtUtils.class);
 
-    @Value("${discord.app.jwtSecret}")
+    @Value("${app.jwt-secret}")
     private String jwtSecret;
 
-    @Value("${discord.app.jwtExpirationMs}")
+    @Value("${app.jwt-expiration-milliseconds}")
     private int jwtExpirationMs;
 
     private SecretKey key() {

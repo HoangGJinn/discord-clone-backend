@@ -11,9 +11,14 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // Endpoint với SockJS cho web browser
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*") // Cho phép mọi domain CORS
                 .withSockJS(); // Hỗ trợ fallback nếu trình duyệt không có websocket
+
+        // Endpoint WebSocket thuần cho React Native (không dùng SockJS)
+        registry.addEndpoint("/ws-native")
+                .setAllowedOriginPatterns("*");
     }
 
     @Override

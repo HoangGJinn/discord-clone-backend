@@ -28,5 +28,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
         // Prefix cho các tin nhắn từ client gửi lên server
         registry.setApplicationDestinationPrefixes("/app");
+
+        // Prefix cho tin nhắn riêng tư tới user cụ thể
+        registry.setUserDestinationPrefix("/user");
     }
 }

@@ -44,6 +44,7 @@ public class MessageServiceImpl implements MessageService {
         }
 
         @Override
+        @Transactional(readOnly = true)
         public java.util.List<ChatMessageResponse> getMessagesByChannel(Long channelId) {
                 return messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId).stream()
                                 .map(message -> ChatMessageResponse.builder()

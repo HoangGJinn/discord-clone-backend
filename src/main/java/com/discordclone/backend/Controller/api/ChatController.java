@@ -2,12 +2,16 @@ package com.discordclone.backend.Controller.api;
 
 import com.discordclone.backend.dto.request.ChatMessageRequest;
 import com.discordclone.backend.dto.response.ChatMessageResponse;
+import com.discordclone.backend.security.services.UserDetailsImpl;
 import com.discordclone.backend.service.message.MessageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Controller;
+
+import java.security.Principal;
 
 @Controller
 @RequiredArgsConstructor
@@ -21,12 +25,17 @@ public class ChatController {
     @SendTo("/topic/channel/{channelId}")
     public ChatMessageResponse handleMessage(
             @DestinationVariable Long channelId,
-            ChatMessageRequest messageReq) {
+            ChatMessageRequest messageReq,
+            Principal principal) {
 
-        // 1. Lưu tin nhắn vào Database
-        ChatMessageResponse response = messageService.saveMessage(channelId, messageReq);
+        // Lấy senderId từ authenticated Principal do WebSocketAuthChannelInterceptor
+        // set
+        if (principal instanceof UsernamePasswordAuthenticationToken authToken) {
+            if (authToken.getPrincipal() instanceof UserDetailsImpl userDetails) {
+                messageReq.setSenderId(userDetails.getId());
+            }
+        }
 
-        // 2. Trả về response (Spring sẽ tự động gửi tới @SendTo)
-        return response;
+        return messageService.saveMessage(channelId, messageReq);
     }
 }

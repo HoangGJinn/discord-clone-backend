@@ -4,7 +4,6 @@ import com.discordclone.backend.dto.request.ChatMessageRequest;
 import com.discordclone.backend.dto.response.ChatMessageResponse;
 import com.discordclone.backend.dto.response.SocketResponse;
 import com.discordclone.backend.entity.mongo.ChannelMessage;
-import com.discordclone.backend.entity.jpa.Channel;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.repository.ChannelRepository;
 import com.discordclone.backend.repository.UserRepository;
@@ -12,10 +11,7 @@ import com.discordclone.backend.repository.mongo.ChannelMessageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -31,51 +27,38 @@ public class MessageServiceImpl implements MessageService {
 
         @Override
         public ChatMessageResponse saveMessage(Long channelId, ChatMessageRequest req) {
-                // Verify channel exists (MySQL)
-                Channel channel = channelRepository.findById(channelId)
+                // Verify channel exists
+                channelRepository.findById(channelId)
                                 .orElseThrow(() -> new RuntimeException("Channel not found"));
 
-                // Verify sender exists (MySQL)
+                // Verify sender exists
                 User sender = userRepository.findById(req.getSenderId())
                                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-                ChannelMessage message = ChannelMessage.builder()
-                                .channelId(channelId)
-                                .userId(sender.getId())
-                                .content(req.getContent())
-                                .createdAt(new Date())
-                                .updatedAt(new Date())
-                                .edited(false)
-                                .deleted(false)
-                                .build();
+                Date now = new Date();
+
+                ChannelMessage message = new ChannelMessage();
+                message.setChannelId(channelId);
+                message.setSenderId(sender.getId());
+                message.setSenderName(sender.getDisplayName());
+                message.setSenderAvatar(sender.getAvatarUrl());
+                message.setContent(req.getContent());
+                message.setAttachments(req.getAttachments() != null ? req.getAttachments() : new ArrayList<>());
+                message.setEdited(false);
+                message.setDeleted(false);
+                message.setPinned(false);
+                message.setCreatedAt(now);
+                message.setUpdatedAt(now);
 
                 ChannelMessage saved = messageRepository.save(message);
-
-                return mapToResponse(saved, sender);
+                return mapToResponse(saved);
         }
 
         @Override
         public List<ChatMessageResponse> getMessagesByChannel(Long channelId) {
                 List<ChannelMessage> messages = messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId);
-
-                if (messages.isEmpty()) {
-                        return new ArrayList<>();
-                }
-
-                // Collect distinct user IDs
-                Set<Long> userIds = messages.stream()
-                                .map(ChannelMessage::getUserId)
-                                .collect(Collectors.toSet());
-
-                // Fetch users from MySQL
-                Map<Long, User> userMap = userRepository.findAllById(userIds).stream()
-                                .collect(Collectors.toMap(User::getId, Function.identity()));
-
                 return messages.stream()
-                                .map(msg -> {
-                                        User user = userMap.get(msg.getUserId());
-                                        return mapToResponse(msg, user);
-                                })
+                                .map(this::mapToResponse)
                                 .collect(Collectors.toList());
         }
 
@@ -84,7 +67,7 @@ public class MessageServiceImpl implements MessageService {
                 ChannelMessage message = messageRepository.findById(messageId)
                                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
-                if (!message.getUserId().equals(userId)) {
+                if (!message.getSenderId().equals(userId)) {
                         throw new RuntimeException("You are not allowed to delete this message");
                 }
 
@@ -105,7 +88,7 @@ public class MessageServiceImpl implements MessageService {
                 ChannelMessage message = messageRepository.findById(messageId)
                                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
-                if (!message.getUserId().equals(userId)) {
+                if (!message.getSenderId().equals(userId)) {
                         throw new RuntimeException("You are not allowed to edit this message");
                 }
 
@@ -114,10 +97,7 @@ public class MessageServiceImpl implements MessageService {
                 message.setUpdatedAt(new Date());
                 ChannelMessage updated = messageRepository.save(message);
 
-                // Need user info to return response
-                User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("User not found"));
-
-                ChatMessageResponse response = mapToResponse(updated, user);
+                ChatMessageResponse response = mapToResponse(updated);
 
                 SocketResponse socketResponse = SocketResponse.builder()
                                 .type("EDIT")
@@ -128,20 +108,21 @@ public class MessageServiceImpl implements MessageService {
                 return response;
         }
 
-        private ChatMessageResponse mapToResponse(ChannelMessage msg, User user) {
+        private ChatMessageResponse mapToResponse(ChannelMessage msg) {
                 return ChatMessageResponse.builder()
                                 .id(msg.getId())
+                                .channelId(msg.getChannelId())
+                                .senderId(msg.getSenderId())
+                                .senderName(msg.getSenderName())
+                                .senderAvatar(msg.getSenderAvatar())
                                 .content(msg.getContent())
-                                .senderId(msg.getUserId())
-                                .senderName(user != null ? user.getDisplayName() : "Unknown User")
-                                .senderAvatar(user != null ? user.getAvatarUrl() : null)
-                                .createdAt(convertToLocalDateTime(msg.getCreatedAt()))
+                                .attachments(msg.getAttachments())
+                                .edited(msg.getEdited())
+                                .deleted(msg.getDeleted())
+                                .pinned(msg.getPinned())
+                                .createdAt(msg.getCreatedAt())
+                                .updatedAt(msg.getUpdatedAt())
+                                .reactions(msg.getReactions())
                                 .build();
-        }
-
-        private LocalDateTime convertToLocalDateTime(Date dateToConvert) {
-                return dateToConvert.toInstant()
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalDateTime();
         }
 }

@@ -44,8 +44,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private Bucket createBucket() {
         Bandwidth limit = Bandwidth.builder()
-                .capacity(50)
-                .refillGreedy(10, Duration.ofMinutes(1))
+                .capacity(500)
+                .refillGreedy(100, Duration.ofMinutes(1))
                 .build();
         return Bucket.builder().addLimit(limit).build();
     }

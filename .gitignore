@@ -40,3 +40,6 @@ src/main/resources/application.properties
 
 # Các file biến môi trường (nếu có dùng)
 .env
+
+# Các file test
+chat-api-tester.html

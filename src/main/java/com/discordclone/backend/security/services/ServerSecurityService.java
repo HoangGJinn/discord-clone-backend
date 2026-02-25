@@ -18,6 +18,7 @@ import java.util.Optional;
  */
 @Service("serverSecurity")
 @RequiredArgsConstructor
+@org.springframework.transaction.annotation.Transactional
 public class ServerSecurityService {
 
     private final ServerMemberRepository serverMemberRepository;
@@ -85,8 +86,13 @@ public class ServerSecurityService {
      */
     public boolean isMemberOfChannel(Long channelId, Long userId) {
         Optional<Channel> channel = channelRepository.findById(channelId);
-        if (channel.isEmpty())
+        if (channel.isEmpty()) {
+            System.out.println("DEBUG: isMemberOfChannel - Channel not found: " + channelId);
             return false;
-        return isMember(channel.get().getServer().getId(), userId);
+        }
+        Long serverId = channel.get().getServer().getId();
+        boolean isMember = isMember(serverId, userId);
+        System.out.println("DEBUG: isMemberOfChannel - ChannelID: " + channelId + ", UserID: " + userId + ", ServerID: " + serverId + ", Access: " + isMember);
+        return isMember;
     }
 }

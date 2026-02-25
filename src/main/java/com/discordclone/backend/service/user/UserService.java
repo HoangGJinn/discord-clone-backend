@@ -18,4 +18,6 @@ public interface UserService {
     void verifyAccount(String email, String otp);
 
     User updateProfile(String userName, UpdateProfileRequest request);
+
+    Optional<User> findById(Long id);
 }

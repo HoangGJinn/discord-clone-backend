@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 @Data
 @Builder
 public class ChatMessageResponse {
-    private Long id;
+    private String id;
     private String content;
     private Long senderId;
     private String senderName;

@@ -21,5 +21,7 @@ public class ChannelResponse {
     private Integer position;
     private Long serverId;
     private Long categoryId;
+    private Integer bitrate;
+    private Integer userLimit;
     private LocalDateTime createdAt;
 }

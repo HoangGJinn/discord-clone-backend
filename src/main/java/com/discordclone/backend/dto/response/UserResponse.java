@@ -1,5 +1,6 @@
 package com.discordclone.backend.dto.response;
 
+import com.discordclone.backend.entity.enums.UserStatus;
 import com.discordclone.backend.entity.jpa.User;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -31,6 +32,8 @@ public class UserResponse {
     private Boolean isActive;
     private Boolean isEmailVerified;
 
+    private UserStatus status;
+
     private LocalDateTime createdAt;
     private LocalDateTime lastActive;
 
@@ -51,6 +54,7 @@ public class UserResponse {
                 .pronouns(user.getPronouns())
                 .isActive(user.getIsActive())
                 .isEmailVerified(user.getIsEmailVerified())
+                .status(user.getStatus())
                 .createdAt(user.getCreatedAt())
                 .lastActive(user.getLastActive())
                 .roles(

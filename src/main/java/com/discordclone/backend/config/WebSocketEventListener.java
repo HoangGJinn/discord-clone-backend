@@ -3,6 +3,7 @@ package com.discordclone.backend.config;
 import com.discordclone.backend.dto.voice.VoiceMessage;
 import com.discordclone.backend.dto.voice.VoiceState;
 import com.discordclone.backend.entity.enums.VoiceMessageType;
+import com.discordclone.backend.service.presence.PresenceService;
 import com.discordclone.backend.service.voice.VoiceStateService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,28 +17,33 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 @RequiredArgsConstructor
 @Slf4j
 public class WebSocketEventListener {
-
     private final VoiceStateService voiceStateService;
+    private final PresenceService presenceService; // << Khai báo thêm service mới
     private final SimpMessagingTemplate messagingTemplate;
 
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = headerAccessor.getSessionId();
-        // Kiểm tra xem Session bị rớt này có đang bật Voice Channel không
+        // 1. Dọn dẹp Voice State (Nếu có)
         VoiceState disconnectedUserState = voiceStateService.getAndRemoveUserBySessionId(sessionId);
-
         if (disconnectedUserState != null) {
             log.info("User {} disconnected from voice channel {}",
                     disconnectedUserState.getUserId(), disconnectedUserState.getChannelId());
-            // Tự động đóng gói một tin nhắn LEAVE
             VoiceMessage leaveMessage = VoiceMessage.builder()
                     .type(VoiceMessageType.LEAVE)
                     .state(disconnectedUserState)
                     .build();
-            // Phát Broadcast báo cho các người dùng khác trong server biết người này đã rớt mạng (rời phòng)
             messagingTemplate.convertAndSend(
                     "/topic/server/" + disconnectedUserState.getServerId() + "/voice", leaveMessage);
+        }
+
+        // 2. Dọn dẹp Presence State (Tự động chuyển Offline nếu tắt hẳn app)
+        Long offlineUserId = presenceService.userDisconnected(sessionId);
+        if (offlineUserId != null) {
+            log.info("User {} has completely gone Offline", offlineUserId);
+            // Chú ý: Việc Broadcast đã được bao gồm bên trong code hàm `userDisconnected`
+            // của PresenceServiceImpl (dùng messagingTemplate gửi đi rồi) nên không cần gửi lại ở đây.
         }
     }
 }

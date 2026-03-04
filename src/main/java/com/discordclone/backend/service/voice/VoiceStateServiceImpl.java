@@ -9,8 +9,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
-public class VoiceStateServiceImpl implements VoiceStateService {
-
+public class VoiceStateServiceImpl implements VoiceStateService{
     // Đây là "Database trên RAM": Map<Kênh thoại ID, Map<User ID, Trạng thái Voice>>
     // Sử dụng ConcurrentHashMap để đảm bảo an toàn đa tiến trình (Thread-safe) khi nhiều người truy cập cùng lúc
     private final Map<Long, Map<String, VoiceState>> channelStates = new ConcurrentHashMap<>();
@@ -75,7 +74,7 @@ public class VoiceStateServiceImpl implements VoiceStateService {
             }
 
             if (usersInChannel.isEmpty()) {
-               channelStates.remove(channelId);
+                channelStates.remove(channelId);
             }
 
             return removeState;

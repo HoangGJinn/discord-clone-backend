@@ -3,6 +3,7 @@ package com.discordclone.backend.service.channel;
 import com.discordclone.backend.dto.request.CreateChannelRequest;
 import com.discordclone.backend.dto.request.UpdateChannelRequest;
 import com.discordclone.backend.dto.response.ChannelResponse;
+import com.discordclone.backend.entity.enums.ChannelType;
 import com.discordclone.backend.entity.enums.MemberRole;
 import com.discordclone.backend.entity.jpa.Category;
 import com.discordclone.backend.entity.jpa.Channel;
@@ -62,6 +63,9 @@ public class ChannelServiceImpl implements ChannelService {
                 .name(request.getName())
                 .type(request.getType())
                 .topic(request.getTopic())
+                .type(request.getType() != null ? request.getType() : ChannelType.TEXT)
+                .bitrate(request.getBitrate() != null ? request.getBitrate() : 64000)
+                .userLimit(request.getUserLimit() != null ? request.getUserLimit() : 0)
                 .server(server)
                 .category(category)
                 .position(newPosition)
@@ -92,6 +96,12 @@ public class ChannelServiceImpl implements ChannelService {
         }
         if (request.getTopic() != null) {
             channel.setTopic(request.getTopic());
+        }
+        if (request.getBitrate() != null) {
+            channel.setBitrate(request.getBitrate());
+        }
+        if (request.getUserLimit() != null) {
+            channel.setUserLimit(request.getUserLimit());
         }
         if (request.getPosition() != null) {
             channel.setPosition(request.getPosition());
@@ -158,6 +168,8 @@ public class ChannelServiceImpl implements ChannelService {
                 .type(channel.getType())
                 .topic(channel.getTopic())
                 .position(channel.getPosition())
+                .bitrate(channel.getBitrate())
+                .userLimit(channel.getUserLimit())
                 .serverId(channel.getServer().getId())
                 .categoryId(channel.getCategory() != null ? channel.getCategory().getId() : null)
                 .createdAt(channel.getCreatedAt())

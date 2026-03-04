@@ -37,6 +37,14 @@ public class Channel {
     @Builder.Default
     private Integer position = 0;
 
+    @Column(name = "bitrate")
+    @Builder.Default
+    private Integer bitrate = 64000; // 64kbps
+
+    @Column(name = "user_limit")
+    @Builder.Default
+    private Integer userLimit = 0;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "server_id", nullable = false)
     private Server server;

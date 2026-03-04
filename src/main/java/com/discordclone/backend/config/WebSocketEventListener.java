@@ -20,6 +20,7 @@ public class WebSocketEventListener {
     private final VoiceStateService voiceStateService;
     private final PresenceService presenceService; // << Khai báo thêm service mới
     private final SimpMessagingTemplate messagingTemplate;
+
     @EventListener
     public void handleWebSocketDisconnectListener(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());

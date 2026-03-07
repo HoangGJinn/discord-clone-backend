@@ -64,7 +64,10 @@ public class DirectMessageController {
         Long senderId = user.getId();
         DirectMessageResponse response = directMessageService.sendMessage(senderId, request);
 
-        // Send via WebSocket to both users
+        // Broadcast to conversation topic (reliable — works like chat channel)
+        messagingTemplate.convertAndSend("/topic/dm/" + response.getConversationId(), response);
+
+        // Also keep user-queue push as fallback
         sendSocketToUser(request.getReceiverId(), response);
         sendSocketToUser(senderId, response);
 

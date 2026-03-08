@@ -17,13 +17,12 @@ import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/users")
 @PreAuthorize("isAuthenticated()")
 public class UserController {
     private final UserService userService;
     private final PresenceService presenceService;
 
-    @GetMapping("/me")
+    @GetMapping("/api/users/me")
     public ResponseEntity<UserResponse> getUser(Principal principal) {
         if (principal == null || principal.getName() == null) {
             return ResponseEntity.status(401).build();
@@ -34,7 +33,7 @@ public class UserController {
         return ResponseEntity.ok(UserResponse.from(user));
     }
 
-    @PutMapping("/profile")
+    @PutMapping("/api/users/profile")
     public ResponseEntity<UserResponse> updateProfile(@RequestBody UpdateProfileRequest request, Principal principal) {
         if (principal == null || principal.getName() == null) {
             return ResponseEntity.status(401).build();
@@ -44,7 +43,7 @@ public class UserController {
         return ResponseEntity.ok(UserResponse.from(updatedUser));
     }
 
-    @PutMapping("/me/status")
+    @PutMapping("/api/users/me/status")
     public ResponseEntity<?> updateMyStatus(
             @RequestParam Long userId,
             @RequestParam UserStatus status) {
@@ -62,7 +61,7 @@ public class UserController {
         }
     }
 
-    @GetMapping("/{id}")
+    @GetMapping("/api/users/{id}")
     public ResponseEntity<UserResponse> getUserById(@PathVariable Long id, Principal principal) {
         // System.out.println("User " + principal.getName() + " fetching profile for id
         // " + id);

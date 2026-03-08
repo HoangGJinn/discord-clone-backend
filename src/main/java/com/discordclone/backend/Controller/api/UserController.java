@@ -1,20 +1,24 @@
 package com.discordclone.backend.Controller.api;
 
+import java.security.Principal;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import com.discordclone.backend.dto.request.UpdateProfileRequest;
 import com.discordclone.backend.dto.response.UserResponse;
 import com.discordclone.backend.entity.enums.UserStatus;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.service.presence.PresenceService;
 import com.discordclone.backend.service.user.UserService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import com.discordclone.backend.dto.request.UpdateProfileRequest;
 
-import java.security.Principal;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/users")
+@PreAuthorize("isAuthenticated()")
 public class UserController {
     private final UserService userService;
     private final PresenceService presenceService;
@@ -47,7 +51,8 @@ public class UserController {
         try {
             // Không cho phép tự ép hệ thống lỗi bằng cách chọn Offline
             if (status == UserStatus.OFFLINE) {
-                return ResponseEntity.badRequest().body("Bạn không thể tự chọn Offline. Hãy đóng ứng dụng thay vì thế!");
+                return ResponseEntity.badRequest()
+                        .body("Bạn không thể tự chọn Offline. Hãy đóng ứng dụng thay vì thế!");
             }
             // Gọi logic của Presence Service (Lưu DB + Phát sóng cập nhật trạng thái)
             presenceService.updateUserStatus(userId, status);
@@ -55,5 +60,14 @@ public class UserController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Lỗi khi cập nhật trạng thái: " + e.getMessage());
         }
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id, Principal principal) {
+        // System.out.println("User " + principal.getName() + " fetching profile for id
+        // " + id);
+        User user = userService.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + id));
+        return ResponseEntity.ok(UserResponse.from(user));
     }
 }

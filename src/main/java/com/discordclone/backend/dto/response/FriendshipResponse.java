@@ -1,6 +1,7 @@
 package com.discordclone.backend.dto.response;
 
 import com.discordclone.backend.entity.enums.FriendshipStatus;
+import com.discordclone.backend.entity.enums.UserStatus;
 import com.discordclone.backend.entity.jpa.Friendship;
 import com.discordclone.backend.entity.jpa.User;
 import lombok.AllArgsConstructor;
@@ -24,12 +25,14 @@ public class FriendshipResponse {
     private String senderUsername;
     private String senderDisplayName;
     private String senderAvatarUrl;
+    private UserStatus senderStatus;
 
     // Thông tin người nhận
     private Long receiverId;
     private String receiverUsername;
     private String receiverDisplayName;
     private String receiverAvatarUrl;
+    private UserStatus receiverStatus;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -49,10 +52,12 @@ public class FriendshipResponse {
                 .senderUsername(sender.getUserName())
                 .senderDisplayName(sender.getDisplayName())
                 .senderAvatarUrl(sender.getAvatarUrl())
+                .senderStatus(sender.getStatus())
                 .receiverId(receiver.getId())
                 .receiverUsername(receiver.getUserName())
                 .receiverDisplayName(receiver.getDisplayName())
                 .receiverAvatarUrl(receiver.getAvatarUrl())
+                .receiverStatus(receiver.getStatus())
                 .createdAt(f.getCreatedAt())
                 .updatedAt(f.getUpdatedAt())
                 .build();

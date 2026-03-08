@@ -275,6 +275,8 @@ public class ServerServiceImpl implements ServerService {
                 .userName(member.getUser().getUserName())
                 .displayName(member.getUser().getDisplayName())
                 .nickname(member.getNickname())
+                .avatarUrl(member.getUser().getAvatarUrl())
+                .status(member.getUser().getStatus())
                 .role(member.getRole())
                 .joinedAt(member.getJoinedAt())
                 .build();

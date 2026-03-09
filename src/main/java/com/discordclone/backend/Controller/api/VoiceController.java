@@ -39,24 +39,18 @@ public class VoiceController {
 
         try {
             Long parsedChannelId = Long.parseLong(channelId);
-            // 1. Kiểm tra xem channel có tồn tại trong Database không
             Optional<Channel> optionalChannel = channelRepository.findById(parsedChannelId);
             if (optionalChannel.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Kênh không tồn tại!");
             }
             Channel channel = optionalChannel.get();
 
-            // 2. Kiểm tra xem đây có phải là loại kênh Voice hợp lệ không
             if (channel.getType() != ChannelType.VOICE) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Đây không phải là kênh thoại!");
             }
 
-            // 3. Kiểm tra Giới hạn người (User Limit) - 0 nghĩa là không giới hạn
             if (channel.getUserLimit() != null && channel.getUserLimit() > 0) {
-                // Đếm số người hiện đang ở trong phòng bằng VoiceStateService
                 List<VoiceState> currentUsers = voiceStateService.getStatesByChannel(parsedChannelId);
-                // Trừ hao nếu user này đang Join lại hoặc bị rớt mạng nhưng server chưa kịp xóa
-                // thì không bị tính là người thứ n+1
                 boolean isAlreadyInRoom = currentUsers.stream()
                         .anyMatch(state -> state.getUserId().equals(userId));
                 if (!isAlreadyInRoom && currentUsers.size() >= channel.getUserLimit()) {
@@ -64,22 +58,24 @@ public class VoiceController {
                 }
             }
 
-            // 4. Nếu qua hết các bài test, tiến hành cấp thẻ (Token)
-            RtcTokenBuilder2 tokenBuilder = new RtcTokenBuilder2();
-            String resultToken = tokenBuilder.buildTokenWithUserAccount(
-                    appId,
-                    appCertificate,
-                    channelId,
-                    userId,
-                    RtcTokenBuilder2.Role.ROLE_PUBLISHER,
-                    TOKEN_EXPIRE_TIME,
-                    TOKEN_EXPIRE_TIME);
-            Map<String, Object> response = new HashMap<>(); // Đổi sang Object để chứa nhiều loại kiểu dữ liệu
+            // Nếu không có certificate (Testing Mode) → trả token rỗng
+            String resultToken = "";
+            if (appCertificate != null && !appCertificate.isBlank()) {
+                RtcTokenBuilder2 tokenBuilder = new RtcTokenBuilder2();
+                resultToken = tokenBuilder.buildTokenWithUserAccount(
+                        appId,
+                        appCertificate,
+                        channelId,
+                        userId,
+                        RtcTokenBuilder2.Role.ROLE_PUBLISHER,
+                        TOKEN_EXPIRE_TIME,
+                        TOKEN_EXPIRE_TIME);
+            }
+
+            Map<String, Object> response = new HashMap<>();
             response.put("token", resultToken);
             response.put("channelId", channelId);
             response.put("userId", userId);
-
-            // Có thể trả thêm cấu hình phòng cho Client chủ động hiển thị
             response.put("bitrate", channel.getBitrate());
             response.put("userLimit", channel.getUserLimit());
             return ResponseEntity.ok(response);

@@ -6,36 +6,28 @@ import java.io.ByteArrayOutputStream;
 import java.util.Base64;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 
+/**
+ * Agora AccessToken2 (version 007) builder.
+ * Little-endian byte order, HMAC-SHA256 signing.
+ * Ref: https://github.com/AgoraIO/Tools/tree/master/DynamicKey/AgoraDynamicKey/java
+ */
 public class AccessToken2 {
+
     public enum kPrivilege {
         kJoinChannel(1),
         kPublishAudioStream(2),
         kPublishVideoStream(3),
         kPublishDataStream(4),
-        kPublishAudioCdn(5),
-        kPublishVideoCdn(6),
-        kRequestPublishAudioStream(7),
-        kRequestPublishVideoStream(8),
-        kRequestPublishDataStream(9),
-        kInvitePublishAudioStream(10),
-        kInvitePublishVideoStream(11),
-        kInvitePublishDataStream(12),
         kAdministrateChannel(101),
         kRtmLogin(1000);
 
-        public short intValue;
-
-        kPrivilege(int value) {
-            intValue = (short) value;
-        }
+        public final short intValue;
+        kPrivilege(int value) { this.intValue = (short) value; }
     }
 
-    private static final int HMAC_SHA256_LENGTH = 32;
-    private static final int VERSION_LENGTH = 3;
-    private static final int APP_ID_LENGTH = 32;
+    private static final String VERSION = "007";
 
     public String appId;
     public String appCertificate;
@@ -43,8 +35,6 @@ public class AccessToken2 {
     public int expireTs;
     public int salt;
     public Map<Short, Integer> privileges;
-
-    private static final String VERSION = "007";
 
     public AccessToken2(String appId, String appCertificate, int issueTs, int expireTs) {
         this.appId = appId;
@@ -60,42 +50,40 @@ public class AccessToken2 {
     }
 
     public String build() throws Exception {
-        if (!isUUID(appId) || !isUUID(appCertificate)) {
-            return "";
-        }
+        if (appId == null || appId.length() != 32) return "";
+        if (appCertificate == null || appCertificate.length() != 32) return "";
 
-        byte[] signing = getSigning();
-        ByteBuf buf = new ByteBuf()
-                .putString(appId).putInt(issueTs).putInt(expireTs).putInt(salt).putShortMap(privileges);
-        byte[] message = buf.asBytes();
+        // signing = HMAC-SHA256(appCertificate, appId + issueTs_LE + salt_LE)
+        ByteBuf signBuf = new ByteBuf();
+        signBuf.putRawBytes(appId.getBytes());
+        signBuf.putUint32(issueTs);
+        signBuf.putUint32(salt);
+        byte[] signing = hmacSign(appCertificate.getBytes(), signBuf.asBytes());
+
+        // message = appId + issueTs_LE + expireTs_LE + salt_LE + privileges
+        ByteBuf msgBuf = new ByteBuf();
+        msgBuf.putRawBytes(appId.getBytes());
+        msgBuf.putUint32(issueTs);
+        msgBuf.putUint32(expireTs);
+        msgBuf.putUint32(salt);
+        msgBuf.putUint16((short) privileges.size());
+        for (Map.Entry<Short, Integer> entry : privileges.entrySet()) {
+            msgBuf.putUint16(entry.getKey());
+            msgBuf.putUint32(entry.getValue());
+        }
+        byte[] message = msgBuf.asBytes();
+
+        // signature = HMAC-SHA256(signing, message)
         byte[] signature = hmacSign(signing, message);
 
-        byte[] info = new ByteBuf().putBytes(signature).putBytes(message).asBytes();
-
-        Deflater deflater = new Deflater();
-        deflater.setInput(info);
-        deflater.finish();
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        byte[] buffer = new byte[1024];
-        while (!deflater.finished()) {
-            int count = deflater.deflate(buffer);
-            bos.write(buffer, 0, count);
-        }
-        bos.close();
-        byte[] compressed = bos.toByteArray();
+        // token = VERSION + Base64(compress(uint16LE(sig_len) + signature + message))
+        ByteBuf tokenBuf = new ByteBuf();
+        tokenBuf.putUint16((short) signature.length);
+        tokenBuf.putRawBytes(signature);
+        tokenBuf.putRawBytes(message);
+        byte[] compressed = compress(tokenBuf.asBytes());
 
         return VERSION + Base64.getEncoder().encodeToString(compressed);
-    }
-
-    private byte[] getSigning() throws Exception {
-        return hmacSign(appCertificate.getBytes(), Integer.toString(issueTs).getBytes());
-    }
-
-    private boolean isUUID(String uuid) {
-        if (uuid == null || uuid.length() != 32) {
-            return false;
-        }
-        return uuid.matches("[0-9a-fA-F]*");
     }
 
     private byte[] hmacSign(byte[] key, byte[] message) throws Exception {
@@ -104,39 +92,46 @@ public class AccessToken2 {
         return mac.doFinal(message);
     }
 
+    private byte[] compress(byte[] input) throws Exception {
+        Deflater deflater = new Deflater();
+        deflater.setInput(input);
+        deflater.finish();
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        while (!deflater.finished()) {
+            bos.write(buffer, 0, deflater.deflate(buffer));
+        }
+        bos.close();
+        return bos.toByteArray();
+    }
+
+    // ─── Little-endian ByteBuf ───────────────────────────────────────────────
+
     public static class ByteBuf {
-        private ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        private final ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
-        public ByteBuf putShort(short v) {
-            baos.write((v >>> 8) & 0xFF);
-            baos.write(v & 0xFF);
-            return this;
-        }
-
-        public ByteBuf putInt(int v) {
-            baos.write((v >>> 24) & 0xFF);
-            baos.write((v >>> 16) & 0xFF);
-            baos.write((v >>> 8) & 0xFF);
-            baos.write(v & 0xFF);
-            return this;
-        }
-
-        public ByteBuf putBytes(byte[] v) {
-            putShort((short) v.length);
+        public ByteBuf putRawBytes(byte[] v) {
             baos.writeBytes(v);
             return this;
         }
 
-        public ByteBuf putString(String v) {
-            return putBytes(v.getBytes());
+        public ByteBuf putBytes(byte[] v) {
+            putUint16((short) v.length);
+            baos.writeBytes(v);
+            return this;
         }
 
-        public ByteBuf putShortMap(Map<Short, Integer> map) {
-            putShort((short) map.size());
-            for (Map.Entry<Short, Integer> entry : map.entrySet()) {
-                putShort(entry.getKey());
-                putInt(entry.getValue());
-            }
+        public ByteBuf putUint16(short v) {
+            baos.write(v & 0xFF);
+            baos.write((v >>> 8) & 0xFF);
+            return this;
+        }
+
+        public ByteBuf putUint32(int v) {
+            baos.write(v & 0xFF);
+            baos.write((v >>> 8) & 0xFF);
+            baos.write((v >>> 16) & 0xFF);
+            baos.write((v >>> 24) & 0xFF);
             return this;
         }
 

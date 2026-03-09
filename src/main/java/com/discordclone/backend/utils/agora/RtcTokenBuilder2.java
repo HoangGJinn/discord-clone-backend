@@ -81,8 +81,8 @@ public class RtcTokenBuilder2 {
     public String buildTokenWithUserAccount(String appId, String appCertificate,
             String channelName, String account, Role role, int tokenExpire, int privilegeExpire) {
         try {
-            AccessToken2 accessToken = new AccessToken2(appId, appCertificate, 0, tokenExpire);
-            accessToken.salt = 1;
+            int issueTs = (int) (System.currentTimeMillis() / 1000);
+            AccessToken2 accessToken = new AccessToken2(appId, appCertificate, issueTs, tokenExpire);
             accessToken.addPrivilege(AccessToken2.kPrivilege.kJoinChannel, privilegeExpire);
             if (role == Role.ROLE_PUBLISHER) {
                 accessToken.addPrivilege(AccessToken2.kPrivilege.kPublishAudioStream, privilegeExpire);

@@ -13,4 +13,8 @@ public interface MessageService {
     void deleteMessage(String messageId, Long userId);
 
     ChatMessageResponse editMessage(String messageId, Long userId, String newContent);
+
+    void addReaction(String messageId, Long userId, String emoji);
+
+    void removeReaction(String messageId, Long userId, String emoji);
 }

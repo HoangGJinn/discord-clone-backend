@@ -1,5 +1,6 @@
 package com.discordclone.backend.entity.jpa;
 
+import com.discordclone.backend.entity.enums.UserStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -58,6 +59,11 @@ public class User {
 
     @Column(name = "is_email_verified")
     private Boolean isEmailVerified;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status")
+    @Builder.Default
+    private UserStatus status = UserStatus.OFFLINE;
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))

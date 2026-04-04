@@ -130,6 +130,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
             item.put("otherUserId", otherUserId);
             item.put("otherUserName", otherUser != null ? otherUser.getDisplayName() : null);
             item.put("otherUserAvatar", otherUser != null ? otherUser.getAvatarUrl() : null);
+            item.put("otherUserStatus", otherUser != null ? otherUser.getStatus() : null);
             item.put("lastMessage", lastMsg != null ? lastMsg.getContent() : null);
             item.put("lastMessageAt", lastMsg != null ? lastMsg.getCreatedAt() : conv.getUpdatedAt());
             item.put("updatedAt", conv.getUpdatedAt());

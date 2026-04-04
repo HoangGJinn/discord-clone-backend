@@ -108,6 +108,40 @@ public class MessageServiceImpl implements MessageService {
                 return response;
         }
 
+        @Override
+        public void addReaction(String messageId, Long userId, String emoji) {
+                ChannelMessage message = messageRepository.findById(messageId)
+                                .orElseThrow(() -> new RuntimeException("Message not found"));
+
+                boolean alreadyReacted = message.getReactions().stream()
+                                .anyMatch(r -> r.getUserId().equals(userId) && r.getEmoji().equals(emoji));
+
+                if (!alreadyReacted) {
+                        ChannelMessage.Reaction reaction = new ChannelMessage.Reaction();
+                        reaction.setUserId(userId);
+                        reaction.setEmoji(emoji);
+                        List<ChannelMessage.Reaction> updated = new ArrayList<>(message.getReactions());
+                        updated.add(reaction);
+                        message.setReactions(updated);
+                        message.setUpdatedAt(new Date());
+                        messageRepository.save(message);
+                }
+        }
+
+        @Override
+        public void removeReaction(String messageId, Long userId, String emoji) {
+                ChannelMessage message = messageRepository.findById(messageId)
+                                .orElseThrow(() -> new RuntimeException("Message not found"));
+
+                List<ChannelMessage.Reaction> filtered = message.getReactions().stream()
+                                .filter(r -> !(r.getUserId().equals(userId) && r.getEmoji().equals(emoji)))
+                                .collect(Collectors.toList());
+
+                message.setReactions(filtered);
+                message.setUpdatedAt(new Date());
+                messageRepository.save(message);
+        }
+
         private ChatMessageResponse mapToResponse(ChannelMessage msg) {
                 return ChatMessageResponse.builder()
                                 .id(msg.getId())

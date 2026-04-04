@@ -46,4 +46,24 @@ public class MessageController {
         ChatMessageResponse response = messageService.editMessage(messageId, userDetails.getId(), req.getContent());
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/messages/{messageId}/reactions")
+    public ResponseEntity<Void> addReaction(
+            @PathVariable String messageId,
+            @RequestParam String emoji,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+
+        messageService.addReaction(messageId, userDetails.getId(), emoji);
+        return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/messages/{messageId}/reactions")
+    public ResponseEntity<Void> removeReaction(
+            @PathVariable String messageId,
+            @RequestParam String emoji,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+
+        messageService.removeReaction(messageId, userDetails.getId(), emoji);
+        return ResponseEntity.ok().build();
+    }
 }

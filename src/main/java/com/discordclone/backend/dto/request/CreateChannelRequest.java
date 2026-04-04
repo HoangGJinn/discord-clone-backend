@@ -1,9 +1,7 @@
 package com.discordclone.backend.dto.request;
 
 import com.discordclone.backend.entity.enums.ChannelType;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -30,4 +28,12 @@ public class CreateChannelRequest {
 
     @Size(max = 500, message = "Topic không được quá 500 ký tự")
     private String topic;
+
+    @Min(value = 8000, message = "Bitrate tối thiểu là 8000")
+    @Max(value = 384000, message = "Bitrate tối đa là 384000")
+    private Integer bitrate;
+
+    @Min(value = 0, message = "Giới hạn người dùng không thể âm")
+    @Max(value = 99, message = "Giới hạn người dùng tối đa là 99")
+    private Integer userLimit;
 }

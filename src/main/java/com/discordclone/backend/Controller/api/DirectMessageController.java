@@ -45,7 +45,7 @@ public class DirectMessageController {
 
     @Operation(summary = "Get all conversations for current user")
     @GetMapping("/conversations")
-    public ResponseEntity<List<Map<String, Object>>> getConversations(
+    public ResponseEntity<List<ConversationResponse>> getConversations(
             @AuthenticationPrincipal UserDetailsImpl user) {
         if (user == null || user.getId() == null) {
             throw new IllegalArgumentException("User is null or unauthenticated");

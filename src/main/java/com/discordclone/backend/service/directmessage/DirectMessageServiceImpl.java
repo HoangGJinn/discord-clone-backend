@@ -4,6 +4,7 @@ import com.discordclone.backend.dto.request.DirectMessageRequest;
 import com.discordclone.backend.dto.request.EditMessageRequest;
 import com.discordclone.backend.dto.response.ConversationResponse;
 import com.discordclone.backend.dto.response.DirectMessageResponse;
+import com.discordclone.backend.dto.response.UserResponse;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.entity.mongo.Conversation;
 import com.discordclone.backend.entity.mongo.DirectMessage;
@@ -96,11 +97,16 @@ public class DirectMessageServiceImpl implements DirectMessageService {
             conv = conversationRepository.save(conv);
         }
 
+        User user1 = userRepository.findById(conv.getUser1Id()).orElse(null);
+        User user2 = userRepository.findById(conv.getUser2Id()).orElse(null);
+        
         Long otherUserId = conv.getUser1Id().equals(userId1) ? conv.getUser2Id() : conv.getUser1Id();
         User otherUser = userRepository.findById(otherUserId).orElse(null);
 
         return ConversationResponse.builder()
                 .id(conv.getId())
+                .participantOne(UserResponse.from(user1))
+                .participantTwo(UserResponse.from(user2))
                 .user1Id(conv.getUser1Id())
                 .user2Id(conv.getUser2Id())
                 .otherUserId(otherUserId)
@@ -112,42 +118,24 @@ public class DirectMessageServiceImpl implements DirectMessageService {
     }
 
     @Override
-    public List<Map<String, Object>> getConversationList(Long userId) {
+    public List<ConversationResponse> getConversationList(Long userId) {
         List<Conversation> conversations = conversationRepository.findAllByUserId(userId);
-        List<Map<String, Object>> result = new ArrayList<>();
+        List<ConversationResponse> result = new ArrayList<>();
 
         for (Conversation conv : conversations) {
-            Long otherUserId = conv.getUser1Id().equals(userId) ? conv.getUser2Id() : conv.getUser1Id();
-            User otherUser = userRepository.findById(otherUserId).orElse(null);
-
+            ConversationResponse resp = getOrCreateConversation(conv.getUser1Id(), conv.getUser2Id());
+            
             // Get last message
-            DirectMessage lastMsg = directMessageRepository
-                    .findTopByConversationIdOrderByCreatedAtDesc(conv.getId())
-                    .orElse(null);
+            directMessageRepository.findTopByConversationIdOrderByCreatedAtDesc(conv.getId())
+                    .ifPresent(lastMsg -> resp.setLastMessage(mapToResponse(lastMsg, null)));
 
-            Map<String, Object> item = new HashMap<>();
-            item.put("conversationId", conv.getId());
-            item.put("otherUserId", otherUserId);
-            item.put("otherUserName", otherUser != null ? otherUser.getDisplayName() : null);
-            item.put("otherUserAvatar", otherUser != null ? otherUser.getAvatarUrl() : null);
-            item.put("otherUserStatus", otherUser != null ? otherUser.getStatus() : null);
-            item.put("lastMessage", lastMsg != null ? lastMsg.getContent() : null);
-            item.put("lastMessageAt", lastMsg != null ? lastMsg.getCreatedAt() : conv.getUpdatedAt());
-            item.put("updatedAt", conv.getUpdatedAt());
-
-            result.add(item);
+            result.add(resp);
         }
 
-        // Sort by lastMessageAt descending
+        // Sort by weight: lastMessage.createdAt descending if exists, else updatedAt
         result.sort((a, b) -> {
-            Date dateA = (Date) a.get("lastMessageAt");
-            Date dateB = (Date) b.get("lastMessageAt");
-            if (dateA == null && dateB == null)
-                return 0;
-            if (dateA == null)
-                return 1;
-            if (dateB == null)
-                return -1;
+            Date dateA = a.getLastMessage() != null ? a.getLastMessage().getCreatedAt() : a.getUpdatedAt();
+            Date dateB = b.getLastMessage() != null ? b.getLastMessage().getCreatedAt() : b.getUpdatedAt();
             return dateB.compareTo(dateA);
         });
 
@@ -218,11 +206,16 @@ public class DirectMessageServiceImpl implements DirectMessageService {
     }
 
     private DirectMessageResponse mapToResponse(DirectMessage dm, DirectMessageResponse replyTo) {
+        User sender = userRepository.findById(dm.getSenderId()).orElse(null);
+        User receiver = userRepository.findById(dm.getReceiverId()).orElse(null);
+
         return DirectMessageResponse.builder()
                 .id(dm.getId())
                 .conversationId(dm.getConversationId())
                 .senderId(dm.getSenderId())
                 .receiverId(dm.getReceiverId())
+                .sender(UserResponse.from(sender))
+                .receiver(UserResponse.from(receiver))
                 .content(dm.getContent())
                 .createdAt(dm.getCreatedAt())
                 .updatedAt(dm.getUpdatedAt())

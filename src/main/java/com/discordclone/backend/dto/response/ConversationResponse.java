@@ -9,6 +9,9 @@ import java.util.Date;
 @Builder
 public class ConversationResponse {
     private String id;
+    private UserResponse participantOne;
+    private UserResponse participantTwo;
+    private DirectMessageResponse lastMessage;
     private Long user1Id;
     private Long user2Id;
     private Long otherUserId;

@@ -18,7 +18,7 @@ public interface DirectMessageService {
 
     ConversationResponse getOrCreateConversation(Long userId1, Long userId2);
 
-    List<Map<String, Object>> getConversationList(Long userId);
+    List<ConversationResponse> getConversationList(Long userId);
 
     DirectMessageResponse editMessage(String messageId, Long userId, EditMessageRequest request);
 

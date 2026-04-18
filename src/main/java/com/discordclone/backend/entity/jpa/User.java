@@ -60,6 +60,9 @@ public class User {
     @Column(name = "is_email_verified")
     private Boolean isEmailVerified;
 
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status")
     @Builder.Default

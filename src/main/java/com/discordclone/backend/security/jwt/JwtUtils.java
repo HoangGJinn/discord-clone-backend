@@ -55,6 +55,15 @@ public class JwtUtils {
                 .getSubject();
     }
 
+    public Date getIssuedAtFromJwtToken(String token) {
+        return Jwts.parser()
+                .verifyWith(key())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .getIssuedAt();
+    }
+
     public boolean validateJwtToken(String authToken) {
         if (!StringUtils.hasText(authToken)) {
             return false;

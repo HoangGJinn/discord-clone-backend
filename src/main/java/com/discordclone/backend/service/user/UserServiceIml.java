@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.Set;
 
@@ -39,7 +40,28 @@ public class UserServiceIml implements UserService {
     @Override
     public void updatePassword(User user, String newPassword) {
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setPasswordChangedAt(LocalDateTime.now());
         userRepository.save(user);
+    }
+
+    @Override
+    public void changePassword(String userName, String currentPassword, String newPassword, String confirmNewPassword) {
+        User user = findByUserName(userName)
+                .orElseThrow(() -> new EntityNotFoundException("User not found: " + userName));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        if (newPassword.equals(currentPassword)) {
+            throw new IllegalArgumentException("New password must be different from current password");
+        }
+
+        if (!newPassword.equals(confirmNewPassword)) {
+            throw new IllegalArgumentException("Confirm password does not match new password");
+        }
+
+        updatePassword(user, newPassword);
     }
 
     @Override

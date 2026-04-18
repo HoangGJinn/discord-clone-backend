@@ -81,6 +81,7 @@ public class SecurityConfig {
 
                         // 2. Các endpoint công khai - CHỈ CẦN TRUYỀN STRING
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/admin/login").permitAll()
                         .requestMatchers("/api/upload/**").permitAll()
                         .requestMatchers("/api/payment/vnpay-ipn/**").permitAll()
                         .requestMatchers("/api/payment/nitro/confirm-mobile/**").permitAll()

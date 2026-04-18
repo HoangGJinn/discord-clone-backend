@@ -5,18 +5,19 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
+import java.time.LocalDateTime;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class LoginResponse {
-    private String message;
-    private String token;
+public class NitroOrderSummary {
+    private Long id;
+    private String txnRef;
     private Long userId;
     private String userName;
-    private String email;
-    private String displayName;
-    private List<String> roles;
+    private Integer amount;
+    private String status;
+    private String paymentMethod;
+    private LocalDateTime createdAt;
 }

@@ -5,18 +5,18 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class LoginResponse {
-    private String message;
-    private String token;
+public class AdminUserSummary {
     private Long userId;
     private String userName;
-    private String email;
     private String displayName;
-    private List<String> roles;
+    private String email;
+    private Boolean isActive;
+    private Boolean isEmailVerified;
+    private java.time.LocalDateTime createdAt;
+    private Integer serverCount;
+    private Integer friendCount;
 }

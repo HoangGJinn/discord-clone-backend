@@ -52,10 +52,20 @@ public class ServerServiceImpl implements ServerService {
                 .build();
         serverMemberRepository.save(ownerMember);
 
-        // Tạo channel mặc định "general"
+        // Tạo category mặc định để nhóm kênh text ban đầu
+        Category defaultCategory = Category.builder()
+            .name("TEXT CHANNELS")
+            .position(0)
+            .server(server)
+            .build();
+        defaultCategory = categoryRepository.save(defaultCategory);
+
+        // Tạo channel mặc định "general" nằm trong category mặc định
         Channel generalChannel = Channel.builder()
                 .name("general")
+            .position(0)
                 .server(server)
+            .category(defaultCategory)
                 .build();
         channelRepository.save(generalChannel);
 

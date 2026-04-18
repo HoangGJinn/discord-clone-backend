@@ -2,16 +2,15 @@ package com.discordclone.backend.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LoginRequest {
-    @NotBlank(message = "Username không được để trống")
-    private String userName;
-
-    @NotBlank(message = "Password không được để trống")
-    private String password;
+public class ReportResolveRequest {
+    @NotBlank
+    private String action; // "DELETE_MESSAGE", "WARN_USER", "BAN_USER", "DISMISS"
 }

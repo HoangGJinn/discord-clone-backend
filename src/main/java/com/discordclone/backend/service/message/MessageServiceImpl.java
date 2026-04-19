@@ -42,6 +42,9 @@ public class MessageServiceImpl implements MessageService {
                 message.setSenderId(sender.getId());
                 message.setSenderName(sender.getDisplayName());
                 message.setSenderAvatar(sender.getAvatarUrl());
+                message.setSenderAvatarEffectId(sender.getAvatarEffectId());
+                message.setSenderBannerEffectId(sender.getBannerEffectId());
+                message.setSenderCardEffectId(sender.getCardEffectId());
                 message.setContent(req.getContent());
                 message.setAttachments(req.getAttachments() != null ? req.getAttachments() : new ArrayList<>());
                 message.setEdited(false);
@@ -149,6 +152,9 @@ public class MessageServiceImpl implements MessageService {
                                 .senderId(msg.getSenderId())
                                 .senderName(msg.getSenderName())
                                 .senderAvatar(msg.getSenderAvatar())
+                                .senderAvatarEffectId(msg.getSenderAvatarEffectId())
+                                .senderBannerEffectId(msg.getSenderBannerEffectId())
+                                .senderCardEffectId(msg.getSenderCardEffectId())
                                 .content(msg.getContent())
                                 .attachments(msg.getAttachments())
                                 .edited(msg.getEdited())

@@ -27,6 +27,9 @@ public class ChannelMessage {
     private Long senderId;
     private String senderName;
     private String senderAvatar;
+    private String senderAvatarEffectId;
+    private String senderBannerEffectId;
+    private String senderCardEffectId;
     private String content;
 
     @Builder.Default

@@ -39,6 +39,10 @@ public class UserResponse {
 
     private Set<String> roles; // ADMIN, USER_DEFAULT, USER_PREMIUM
 
+    private String avatarEffectId;
+    private String bannerEffectId;
+    private String cardEffectId;
+
     public static UserResponse from(User user) {
         if (user == null) return null;
 
@@ -57,6 +61,9 @@ public class UserResponse {
                 .status(user.getStatus())
                 .createdAt(user.getCreatedAt())
                 .lastActive(user.getLastActive())
+                .avatarEffectId(user.getAvatarEffectId())
+                .bannerEffectId(user.getBannerEffectId())
+                .cardEffectId(user.getCardEffectId())
                 .roles(
                         user.getRoles() == null ? Set.of()
                                 : user.getRoles().stream()

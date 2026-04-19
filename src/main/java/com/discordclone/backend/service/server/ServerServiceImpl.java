@@ -289,6 +289,9 @@ public class ServerServiceImpl implements ServerService {
                 .status(member.getUser().getStatus())
                 .role(member.getRole())
                 .joinedAt(member.getJoinedAt())
+                .avatarEffectId(member.getUser().getAvatarEffectId())
+                .bannerEffectId(member.getUser().getBannerEffectId())
+                .cardEffectId(member.getUser().getCardEffectId())
                 .build();
     }
 }

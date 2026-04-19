@@ -24,4 +24,7 @@ public class ServerMemberResponse {
     private UserStatus status;
     private MemberRole role;
     private LocalDateTime joinedAt;
+    private String avatarEffectId;
+    private String bannerEffectId;
+    private String cardEffectId;
 }

@@ -129,6 +129,12 @@ public class UserServiceIml implements UserService {
             user.setCountry(request.getCountry());
         if (request.getBirthDate() != null)
             user.setBirthDate(request.getBirthDate());
+        if (request.getAvatarEffectId() != null)
+            user.setAvatarEffectId(request.getAvatarEffectId().isEmpty() ? null : request.getAvatarEffectId());
+        if (request.getBannerEffectId() != null)
+            user.setBannerEffectId(request.getBannerEffectId().isEmpty() ? null : request.getBannerEffectId());
+        if (request.getCardEffectId() != null)
+            user.setCardEffectId(request.getCardEffectId().isEmpty() ? null : request.getCardEffectId());
 
         return userRepository.save(user);
     }

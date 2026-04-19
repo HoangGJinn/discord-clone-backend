@@ -74,5 +74,10 @@ public class SearchResponse {
         private String role;
         private Long serverId;
         private String serverName;
+        private String avatarUrl;
+        private String status;
+        private String avatarEffectId;
+        private String bannerEffectId;
+        private String cardEffectId;
     }
 }

@@ -26,6 +26,9 @@ public class FriendshipResponse {
     private String senderDisplayName;
     private String senderAvatarUrl;
     private UserStatus senderStatus;
+    private String senderAvatarEffectId;
+    private String senderBannerEffectId;
+    private String senderCardEffectId;
 
     // Thông tin người nhận
     private Long receiverId;
@@ -33,6 +36,9 @@ public class FriendshipResponse {
     private String receiverDisplayName;
     private String receiverAvatarUrl;
     private UserStatus receiverStatus;
+    private String receiverAvatarEffectId;
+    private String receiverBannerEffectId;
+    private String receiverCardEffectId;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -53,11 +59,17 @@ public class FriendshipResponse {
                 .senderDisplayName(sender.getDisplayName())
                 .senderAvatarUrl(sender.getAvatarUrl())
                 .senderStatus(sender.getStatus())
+                .senderAvatarEffectId(sender.getAvatarEffectId())
+                .senderBannerEffectId(sender.getBannerEffectId())
+                .senderCardEffectId(sender.getCardEffectId())
                 .receiverId(receiver.getId())
                 .receiverUsername(receiver.getUserName())
                 .receiverDisplayName(receiver.getDisplayName())
                 .receiverAvatarUrl(receiver.getAvatarUrl())
                 .receiverStatus(receiver.getStatus())
+                .receiverAvatarEffectId(receiver.getAvatarEffectId())
+                .receiverBannerEffectId(receiver.getBannerEffectId())
+                .receiverCardEffectId(receiver.getCardEffectId())
                 .createdAt(f.getCreatedAt())
                 .updatedAt(f.getUpdatedAt())
                 .build();

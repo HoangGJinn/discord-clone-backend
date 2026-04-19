@@ -68,6 +68,15 @@ public class User {
     @Builder.Default
     private UserStatus status = UserStatus.OFFLINE;
 
+    @Column(name = "avatar_effect_id")
+    private String avatarEffectId;
+
+    @Column(name = "banner_effect_id")
+    private String bannerEffectId;
+
+    @Column(name = "card_effect_id")
+    private String cardEffectId;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
     @Builder.Default

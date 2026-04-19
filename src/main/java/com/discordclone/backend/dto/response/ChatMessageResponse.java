@@ -15,6 +15,9 @@ public class ChatMessageResponse {
     private Long senderId;
     private String senderName;
     private String senderAvatar;
+    private String senderAvatarEffectId;
+    private String senderBannerEffectId;
+    private String senderCardEffectId;
     private String content;
     private List<String> attachments;
     private Boolean edited;

@@ -10,6 +10,9 @@ public interface FriendService {
     /** Tìm kiếm user theo username hoặc displayName */
     List<UserSearchResponse> searchUsers(String keyword, Long currentUserId);
 
+    /** Tìm kiếm bạn bè theo username hoặc displayName */
+    List<UserSearchResponse> searchFriends(String keyword, Long currentUserId);
+
     /** Gửi lời mời kết bạn */
     FriendshipResponse sendFriendRequest(Long senderId, Long receiverId);
 

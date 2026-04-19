@@ -44,6 +44,29 @@ public class FriendServiceImpl implements FriendService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserSearchResponse> searchFriends(String keyword, Long currentUserId) {
+        if (keyword == null || keyword.trim().length() < 2) {
+            throw new IllegalArgumentException("Keyword must be at least 2 characters");
+        }
+
+        String trimmed = keyword.trim();
+
+        // Get list of accepted friendships
+        List<Friendship> friendships = friendshipRepository.findAcceptedFriendships(currentUserId);
+
+        return friendships.stream()
+                .map(f -> f.getSender().getId().equals(currentUserId) ? f.getReceiver() : f.getSender())
+                .filter(u -> {
+                    String username = u.getUserName() == null ? "" : u.getUserName().toLowerCase();
+                    String displayName = u.getDisplayName() == null ? "" : u.getDisplayName().toLowerCase();
+                    return username.contains(trimmed.toLowerCase()) || displayName.contains(trimmed.toLowerCase());
+                })
+                .map(u -> buildUserSearchResponse(u, currentUserId))
+                .collect(Collectors.toList());
+    }
+
     // â”€â”€â”€ Gá»­i lá»i má»i â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @Override
     public FriendshipResponse sendFriendRequest(Long senderId, Long receiverId) {

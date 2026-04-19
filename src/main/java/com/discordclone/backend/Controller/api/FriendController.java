@@ -48,6 +48,15 @@ public class FriendController {
         return ResponseEntity.ok(results);
     }
 
+    @GetMapping("/api/friends/search")
+    @Operation(summary = "Tìm kiếm bạn bè theo username hoặc tên hiển thị")
+    public ResponseEntity<List<UserSearchResponse>> searchFriends(
+            @RequestParam String keyword,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        List<UserSearchResponse> results = friendService.searchFriends(keyword, userDetails.getId());
+        return ResponseEntity.ok(results);
+    }
+
     // ─── Danh sách bạn bè ──────────────────────────────────────────────────────
 
     @GetMapping("/api/friends")

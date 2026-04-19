@@ -80,10 +80,9 @@ public class PresenceServiceImpl implements PresenceService{
             // nên tạm gác qua tính năng Ẩn danh - Offline do Server tự quyết)
             return;
         }
-        // Đang không online trên bất kỳ thiết bị nào thì không cho chỉnh
-        if (!userSessions.containsKey(userId)) {
-            return;
-        }
+
+        // Luôn cho phép lưu trạng thái thủ công vào DB/cache để tránh trường hợp
+        // kết nối websocket vừa thiết lập nhưng map session chưa kịp đồng bộ.
         customStatuses.put(userId, newStatus);
 
         // Cập nhật DB

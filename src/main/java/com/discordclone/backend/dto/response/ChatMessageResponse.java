@@ -1,5 +1,6 @@
 package com.discordclone.backend.dto.response;
 
+import com.discordclone.backend.dto.message.MessageAttachment;
 import com.discordclone.backend.entity.mongo.ChannelMessage;
 import lombok.Builder;
 import lombok.Data;
@@ -19,7 +20,9 @@ public class ChatMessageResponse {
     private String senderBannerEffectId;
     private String senderCardEffectId;
     private String content;
-    private List<String> attachments;
+    private List<MessageAttachment> attachments;
+    private String replyToId;
+    private ChatMessageResponse replyToMessage;
     private Boolean edited;
     private Boolean deleted;
     private Boolean pinned;

@@ -3,6 +3,7 @@ package com.discordclone.backend.service.message;
 import com.discordclone.backend.dto.request.ChatMessageRequest;
 import com.discordclone.backend.dto.response.ChatMessageResponse;
 import com.discordclone.backend.dto.response.SocketResponse;
+import com.discordclone.backend.dto.message.MessageAttachment;
 import com.discordclone.backend.entity.mongo.ChannelMessage;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.repository.ChannelRepository;
@@ -13,7 +14,6 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -46,7 +46,20 @@ public class MessageServiceImpl implements MessageService {
                 message.setSenderBannerEffectId(sender.getBannerEffectId());
                 message.setSenderCardEffectId(sender.getCardEffectId());
                 message.setContent(req.getContent());
-                message.setAttachments(req.getAttachments() != null ? req.getAttachments() : new ArrayList<>());
+                message.setReplyToId(req.getReplyToId());
+                List<MessageAttachment> attachmentUrls = Optional.ofNullable(req.getAttachments())
+                                .orElseGet(ArrayList::new)
+                                .stream()
+                                .filter(Objects::nonNull)
+                                .map(item -> MessageAttachment.builder()
+                                        .url(item.getUrl())
+                                        .filename(item.getFilename())
+                                        .contentType(item.getContentType())
+                                        .size(item.getSize())
+                                        .build())
+                                .filter(item -> item.getUrl() != null && !item.getUrl().isBlank())
+                                .collect(Collectors.toList());
+                message.setAttachments(attachmentUrls);
                 message.setEdited(false);
                 message.setDeleted(false);
                 message.setPinned(false);
@@ -54,14 +67,14 @@ public class MessageServiceImpl implements MessageService {
                 message.setUpdatedAt(now);
 
                 ChannelMessage saved = messageRepository.save(message);
-                return mapToResponse(saved);
+                return mapToResponse(saved, true);
         }
 
         @Override
         public List<ChatMessageResponse> getMessagesByChannel(Long channelId) {
                 List<ChannelMessage> messages = messageRepository.findByChannelIdOrderByCreatedAtAsc(channelId);
                 return messages.stream()
-                                .map(this::mapToResponse)
+                                .map(msg -> mapToResponse(msg, true))
                                 .collect(Collectors.toList());
         }
 
@@ -100,7 +113,7 @@ public class MessageServiceImpl implements MessageService {
                 message.setUpdatedAt(new Date());
                 ChannelMessage updated = messageRepository.save(message);
 
-                ChatMessageResponse response = mapToResponse(updated);
+                ChatMessageResponse response = mapToResponse(updated, true);
 
                 SocketResponse socketResponse = SocketResponse.builder()
                                 .type("EDIT")
@@ -127,7 +140,11 @@ public class MessageServiceImpl implements MessageService {
                         updated.add(reaction);
                         message.setReactions(updated);
                         message.setUpdatedAt(new Date());
-                        messageRepository.save(message);
+                        ChannelMessage saved = messageRepository.save(message);
+                        messagingTemplate.convertAndSend(
+                                "/topic/channel/" + saved.getChannelId(),
+                                mapToResponse(saved, true)
+                        );
                 }
         }
 
@@ -142,10 +159,21 @@ public class MessageServiceImpl implements MessageService {
 
                 message.setReactions(filtered);
                 message.setUpdatedAt(new Date());
-                messageRepository.save(message);
+                ChannelMessage saved = messageRepository.save(message);
+                messagingTemplate.convertAndSend(
+                        "/topic/channel/" + saved.getChannelId(),
+                        mapToResponse(saved, true)
+                );
         }
 
-        private ChatMessageResponse mapToResponse(ChannelMessage msg) {
+        private ChatMessageResponse mapToResponse(ChannelMessage msg, boolean includeReply) {
+                ChatMessageResponse replyToMessage = null;
+                if (includeReply && msg.getReplyToId() != null && !msg.getReplyToId().isBlank()) {
+                        replyToMessage = messageRepository.findById(msg.getReplyToId())
+                                .map(reply -> mapToResponse(reply, false))
+                                .orElse(null);
+                }
+
                 return ChatMessageResponse.builder()
                                 .id(msg.getId())
                                 .channelId(msg.getChannelId())
@@ -156,7 +184,9 @@ public class MessageServiceImpl implements MessageService {
                                 .senderBannerEffectId(msg.getSenderBannerEffectId())
                                 .senderCardEffectId(msg.getSenderCardEffectId())
                                 .content(msg.getContent())
-                                .attachments(msg.getAttachments())
+                                .attachments(msg.getAttachments() != null ? msg.getAttachments() : Collections.emptyList())
+                                .replyToId(msg.getReplyToId())
+                                .replyToMessage(replyToMessage)
                                 .edited(msg.getEdited())
                                 .deleted(msg.getDeleted())
                                 .pinned(msg.getPinned())

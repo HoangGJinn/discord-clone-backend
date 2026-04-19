@@ -24,7 +24,7 @@ public interface DirectMessageService {
 
     DirectMessageResponse deleteMessage(String messageId, Long userId);
 
-    void addReaction(String messageId, Long userId, String emoji);
+    DirectMessageResponse addReaction(String messageId, Long userId, String emoji);
 
-    void removeReaction(String messageId, Long userId);
+    DirectMessageResponse removeReaction(String messageId, Long userId, String emoji);
 }

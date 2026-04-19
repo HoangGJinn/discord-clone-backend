@@ -19,20 +19,30 @@ public class FileUploadController {
     private final FileService fileService;
 
     @PostMapping("/upload")
-    public ResponseEntity<Map<String, String>> uploadFile(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "resourceType", required = false, defaultValue = "auto") String resourceType) {
         System.out.println("DEBUG: Nhận yêu cầu upload file: " + file.getOriginalFilename());
         try {
-            Map result = fileService.upload(file);
+            Map<?, ?> result = fileService.upload(file);
             String url = (String) result.get("secure_url");
+            String filename = file.getOriginalFilename();
+            String contentType = file.getContentType();
             
-            Map<String, String> response = new HashMap<>();
+            Map<String, Object> response = new HashMap<>();
             response.put("url", url);
+            response.put("filename", filename != null ? filename : "file");
+            response.put("contentType", contentType != null ? contentType : "application/octet-stream");
             
             return ResponseEntity.ok(response);
         } catch (IOException e) {
-            Map<String, String> errorResponse = new HashMap<>();
+            Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to upload file: " + e.getMessage());
             return ResponseEntity.internalServerError().body(errorResponse);
+        } catch (Exception e) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Upload rejected: " + e.getMessage());
+            return ResponseEntity.status(400).body(errorResponse);
         }
     }
 }

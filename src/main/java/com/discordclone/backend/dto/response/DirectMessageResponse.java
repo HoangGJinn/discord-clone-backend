@@ -1,5 +1,6 @@
 package com.discordclone.backend.dto.response;
 
+import com.discordclone.backend.dto.message.MessageAttachment;
 import lombok.Builder;
 import lombok.Data;
 
@@ -25,7 +26,7 @@ public class DirectMessageResponse {
     private boolean deleted;
     private boolean isRead;
 
-    private List<String> attachments;
+    private List<MessageAttachment> attachments;
     private String replyToId;
     private DirectMessageResponse replyToMessage;
 

@@ -1,6 +1,7 @@
 package com.discordclone.backend.dto.request;
 
 import jakarta.validation.constraints.NotNull;
+import com.discordclone.backend.dto.message.MessageAttachment;
 import lombok.Data;
 
 import java.util.List;
@@ -13,7 +14,7 @@ public class DirectMessageRequest {
 
     private String content;
 
-    private List<String> attachments;
+    private List<MessageAttachment> attachments;
 
     private String replyToId;
 }

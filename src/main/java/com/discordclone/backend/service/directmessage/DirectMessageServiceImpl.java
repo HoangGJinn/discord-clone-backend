@@ -2,6 +2,7 @@ package com.discordclone.backend.service.directmessage;
 
 import com.discordclone.backend.dto.request.DirectMessageRequest;
 import com.discordclone.backend.dto.request.EditMessageRequest;
+import com.discordclone.backend.dto.message.MessageAttachment;
 import com.discordclone.backend.dto.response.ConversationResponse;
 import com.discordclone.backend.dto.response.DirectMessageResponse;
 import com.discordclone.backend.dto.response.UserResponse;
@@ -31,13 +32,25 @@ public class DirectMessageServiceImpl implements DirectMessageService {
         // Get or create conversation
         ConversationResponse conv = getOrCreateConversation(senderId, request.getReceiverId());
 
+        List<MessageAttachment> attachments = Optional.ofNullable(request.getAttachments())
+            .orElseGet(ArrayList::new)
+            .stream()
+            .filter(Objects::nonNull)
+            .map(item -> MessageAttachment.builder()
+                .url(item.getUrl())
+                .filename(item.getFilename())
+                .contentType(item.getContentType())
+                .size(item.getSize())
+                .build())
+            .filter(item -> item.getUrl() != null && !item.getUrl().isBlank())
+            .toList();
+
         // Build and save message
         DirectMessage message = DirectMessage.builder()
                 .conversationId(conv.getId())
                 .senderId(senderId)
                 .receiverId(request.getReceiverId())
                 .content(request.getContent())
-                .attachments(request.getAttachments() != null ? request.getAttachments() : new ArrayList<>())
                 .replyToId(request.getReplyToId())
                 .createdAt(new Date())
                 .updatedAt(new Date())
@@ -47,7 +60,16 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .reactions(new HashMap<>())
                 .build();
 
+        message.setAttachments(attachments);
+
         DirectMessage saved = directMessageRepository.save(message);
+
+        DirectMessageResponse replyTo = null;
+        if (saved.getReplyToId() != null) {
+            replyTo = directMessageRepository.findById(saved.getReplyToId())
+                .map(r -> mapToResponse(r, null))
+                .orElse(null);
+        }
 
         // Update conversation updatedAt
         conversationRepository.findById(conv.getId()).ifPresent(c -> {
@@ -55,7 +77,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
             conversationRepository.save(c);
         });
 
-        return mapToResponse(saved, null);
+        return mapToResponse(saved, replyTo);
     }
 
     @Override
@@ -177,7 +199,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
     }
 
     @Override
-    public void addReaction(String messageId, Long userId, String emoji) {
+    public DirectMessageResponse addReaction(String messageId, Long userId, String emoji) {
         DirectMessage message = directMessageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
@@ -188,21 +210,32 @@ public class DirectMessageServiceImpl implements DirectMessageService {
 
         reactions.computeIfAbsent(emoji, k -> new HashSet<>()).add(userId);
         message.setReactions(reactions);
-        directMessageRepository.save(message);
+        DirectMessage saved = directMessageRepository.save(message);
+        return mapToResponse(saved, null);
     }
 
     @Override
-    public void removeReaction(String messageId, Long userId) {
+    public DirectMessageResponse removeReaction(String messageId, Long userId, String emoji) {
         DirectMessage message = directMessageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
         Map<String, Set<Long>> reactions = message.getReactions();
         if (reactions != null) {
-            reactions.values().forEach(set -> set.remove(userId));
-            reactions.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+            Set<Long> users = reactions.get(emoji);
+            if (users != null) {
+                users.remove(userId);
+                if (users.isEmpty()) {
+                    reactions.remove(emoji);
+                } else {
+                    reactions.put(emoji, users);
+                }
+            }
             message.setReactions(reactions);
-            directMessageRepository.save(message);
+            DirectMessage saved = directMessageRepository.save(message);
+            return mapToResponse(saved, null);
         }
+
+        return mapToResponse(message, null);
     }
 
     private DirectMessageResponse mapToResponse(DirectMessage dm, DirectMessageResponse replyTo) {
@@ -222,7 +255,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .edited(dm.isEdited())
                 .deleted(dm.isDeleted())
                 .isRead(dm.isRead())
-                .attachments(dm.getAttachments())
+                .attachments(dm.getAttachments() != null ? dm.getAttachments() : Collections.emptyList())
                 .replyToId(dm.getReplyToId())
                 .replyToMessage(replyTo)
                 .reactions(dm.getReactions())

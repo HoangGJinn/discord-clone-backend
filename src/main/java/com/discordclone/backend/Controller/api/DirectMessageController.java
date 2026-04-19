@@ -150,7 +150,11 @@ public class DirectMessageController {
             @AuthenticationPrincipal UserDetailsImpl userDetails,
             @PathVariable String messageId,
             @RequestParam String emoji) {
-        directMessageService.addReaction(messageId, userDetails.getId(), emoji);
+        DirectMessageResponse response = directMessageService.addReaction(messageId, userDetails.getId(), emoji);
+
+        messagingTemplate.convertAndSend("/topic/dm/" + response.getConversationId(), response);
+        sendSocketToUser(response.getReceiverId(), response);
+        sendSocketToUser(response.getSenderId(), response);
         return ResponseEntity.ok().build();
     }
 
@@ -158,8 +162,13 @@ public class DirectMessageController {
     @DeleteMapping("/{messageId}/reactions")
     public ResponseEntity<Void> removeReaction(
             @AuthenticationPrincipal UserDetailsImpl userDetails,
-            @PathVariable String messageId) {
-        directMessageService.removeReaction(messageId, userDetails.getId());
+            @PathVariable String messageId,
+            @RequestParam String emoji) {
+        DirectMessageResponse response = directMessageService.removeReaction(messageId, userDetails.getId(), emoji);
+
+        messagingTemplate.convertAndSend("/topic/dm/" + response.getConversationId(), response);
+        sendSocketToUser(response.getReceiverId(), response);
+        sendSocketToUser(response.getSenderId(), response);
         return ResponseEntity.ok().build();
     }
 }

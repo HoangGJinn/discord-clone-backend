@@ -16,6 +16,11 @@ public class DMCallState {
     private String receiverId;
     private String callerName;
     private String receiverName;
+    private String callerAvatar;
+    private String receiverAvatar;
+    
+    @Builder.Default
+    private CallType callType = CallType.VOICE;
     
     @Builder.Default
     private CallStatus status = CallStatus.PENDING;
@@ -38,11 +43,22 @@ public class DMCallState {
     @Builder.Default
     private boolean receiverDeafened = false;
     
+    @Builder.Default
+    private boolean callerCameraOn = false;
+    
+    @Builder.Default
+    private boolean receiverCameraOn = false;
+    
     public enum CallStatus {
-        PENDING,    // Đang đổ chuông
-        ACCEPTED,  // Người kia nghe máy
-        DECLINED,   // Người kia từ chối
-        ENDED,      // Kết thúc cuộc gọi
-        MISSED      // Không ai nghe máy
+        PENDING,
+        ACCEPTED,
+        DECLINED,
+        ENDED,
+        MISSED
+    }
+    
+    public enum CallType {
+        VOICE,
+        VIDEO
     }
 }

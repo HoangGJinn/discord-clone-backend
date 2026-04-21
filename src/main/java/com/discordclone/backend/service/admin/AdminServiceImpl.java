@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -387,13 +388,140 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     public Page<AuditLogResponse> getAuditLogs(Specification<AuditLog> spec, Pageable pageable) {
-        // TODO: Implement with proper projection
-        return Page.empty();
+        Page<AuditLog> auditLogs = auditLogRepository.findAll(spec, pageable);
+        return auditLogs.map(log -> AuditLogResponse.builder()
+                .id(log.getId())
+                .adminId(log.getAdmin().getId())
+                .adminName(log.getAdmin().getUserName())
+                .action(log.getAction())
+                .targetType(log.getTargetType())
+                .targetId(log.getTargetId())
+                .details(log.getDetails())
+                .ipAddress(log.getIpAddress())
+                .createdAt(log.getCreatedAt())
+                .build());
+    }
+
+    @Override
+    public AuditLogResponse getAuditLogById(Long logId) {
+        AuditLog log = auditLogRepository.findById(logId)
+                .orElseThrow(() -> new ResourceNotFoundException("Audit log not found"));
+        return AuditLogResponse.builder()
+                .id(log.getId())
+                .adminId(log.getAdmin().getId())
+                .adminName(log.getAdmin().getUserName())
+                .action(log.getAction())
+                .targetType(log.getTargetType())
+                .targetId(log.getTargetId())
+                .details(log.getDetails())
+                .ipAddress(log.getIpAddress())
+                .createdAt(log.getCreatedAt())
+                .build();
     }
 
     @Override
     @Transactional
     public void logAudit(AuditLog auditLog) {
         auditLogRepository.save(auditLog);
+    }
+
+    // ===== NITRO PAYMENT ADMIN =====
+
+    @Override
+    public Page<NitroOrderSummary> getAllOrders(Specification<NitroOrder> spec, Pageable pageable) {
+        Page<NitroOrder> orders = nitroOrderRepository.findAll(spec, pageable);
+        return orders.map(order -> {
+            String userName = "";
+            if (order.getUserId() != null) {
+                Optional<User> user = userRepository.findById(order.getUserId());
+                userName = user.map(User::getUserName).orElse("Unknown");
+            }
+            return NitroOrderSummary.builder()
+                    .id(order.getId())
+                    .txnRef(order.getVnpTxnRef())
+                    .userId(order.getUserId())
+                    .userName(userName)
+                    .amount(order.getAmount() != null ? order.getAmount().intValue() : 0)
+                    .status(order.getStatus())
+                    .paymentMethod("VNPay")
+                    .createdAt(order.getCreatedAt())
+                    .build();
+        });
+    }
+
+    @Override
+    public NitroOrderSummary getOrderByTxnRef(String txnRef) {
+        NitroOrder order = nitroOrderRepository.findByVnpTxnRef(txnRef)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with txnRef: " + txnRef));
+        String userName = "";
+        if (order.getUserId() != null) {
+            Optional<User> user = userRepository.findById(order.getUserId());
+            userName = user.map(User::getUserName).orElse("Unknown");
+        }
+        return NitroOrderSummary.builder()
+                .id(order.getId())
+                .txnRef(order.getVnpTxnRef())
+                .userId(order.getUserId())
+                .userName(userName)
+                .amount(order.getAmount() != null ? order.getAmount().intValue() : 0)
+                .status(order.getStatus())
+                .paymentMethod("VNPay")
+                .createdAt(order.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public void approveOrder(String txnRef, Long adminId) {
+        NitroOrder order = nitroOrderRepository.findByVnpTxnRef(txnRef)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with txnRef: " + txnRef));
+        order.setStatus("CONFIRMED");
+        nitroOrderRepository.save(order);
+
+        // Log audit
+        auditLogRepository.save(AuditLog.builder()
+                .admin(userRepository.getReferenceById(adminId))
+                .action("APPROVE_ORDER")
+                .targetType("NITRO_ORDER")
+                .targetId(order.getId())
+                .details("{\"txnRef\": \"" + txnRef + "\"}")
+                .build());
+    }
+
+    @Override
+    @Transactional
+    public void rejectOrder(String txnRef, Long adminId) {
+        NitroOrder order = nitroOrderRepository.findByVnpTxnRef(txnRef)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with txnRef: " + txnRef));
+        order.setStatus("FAILED");
+        nitroOrderRepository.save(order);
+
+        // Log audit
+        auditLogRepository.save(AuditLog.builder()
+                .admin(userRepository.getReferenceById(adminId))
+                .action("REJECT_ORDER")
+                .targetType("NITRO_ORDER")
+                .targetId(order.getId())
+                .details("{\"txnRef\": \"" + txnRef + "\"}")
+                .build());
+    }
+
+    @Override
+    public Map<String, Object> getRevenueStats() {
+        Long totalRevenue = nitroOrderRepository.sumConfirmedRevenue();
+        Long totalOrders = nitroOrderRepository.count();
+        Long successCount = nitroOrderRepository.countByStatus("CONFIRMED");
+        Long pendingCount = nitroOrderRepository.countByStatus("PENDING");
+        Long failedCount = nitroOrderRepository.countByStatus("FAILED");
+        double successRate = totalOrders > 0 ? (successCount * 100.0 / totalOrders) : 0;
+
+        Map<String, Object> stats = new java.util.HashMap<>();
+        stats.put("totalRevenue", totalRevenue);
+        stats.put("totalOrders", totalOrders);
+        stats.put("successRate", Math.round(successRate * 10.0) / 10.0);
+        stats.put("successCount", successCount);
+        stats.put("pendingCount", pendingCount);
+        stats.put("failedCount", failedCount);
+        return stats;
     }
 }

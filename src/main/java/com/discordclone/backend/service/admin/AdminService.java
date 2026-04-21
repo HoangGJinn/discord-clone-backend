@@ -2,6 +2,7 @@ package com.discordclone.backend.service.admin;
 
 import com.discordclone.backend.dto.response.*;
 import com.discordclone.backend.entity.jpa.AuditLog;
+import com.discordclone.backend.entity.jpa.NitroOrder;
 import com.discordclone.backend.entity.jpa.ReportedMessage;
 import com.discordclone.backend.entity.jpa.Server;
 import com.discordclone.backend.entity.jpa.User;
@@ -11,6 +12,7 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 public interface AdminService {
     // Stats
@@ -70,5 +72,18 @@ public interface AdminService {
     // Audit Logs
     Page<AuditLogResponse> getAuditLogs(Specification<AuditLog> spec, Pageable pageable);
 
+    AuditLogResponse getAuditLogById(Long logId);
+
     void logAudit(AuditLog auditLog);
+
+    // Nitro Payment Admin
+    Page<NitroOrderSummary> getAllOrders(Specification<NitroOrder> spec, Pageable pageable);
+
+    NitroOrderSummary getOrderByTxnRef(String txnRef);
+
+    void approveOrder(String txnRef, Long adminId);
+
+    void rejectOrder(String txnRef, Long adminId);
+
+    Map<String, Object> getRevenueStats();
 }

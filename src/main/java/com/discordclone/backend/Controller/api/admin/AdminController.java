@@ -5,6 +5,8 @@ import com.discordclone.backend.dto.request.BlacklistKeywordRequest;
 import com.discordclone.backend.dto.request.BulkUserActionRequest;
 import com.discordclone.backend.dto.request.ReportResolveRequest;
 import com.discordclone.backend.dto.response.*;
+import com.discordclone.backend.entity.jpa.AuditLog;
+import com.discordclone.backend.entity.jpa.NitroOrder;
 import com.discordclone.backend.entity.jpa.ReportedMessage;
 import com.discordclone.backend.entity.jpa.Server;
 import com.discordclone.backend.entity.jpa.User;
@@ -22,6 +24,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -244,42 +247,68 @@ public class AdminController {
     public ResponseEntity<Page<AuditLogResponse>> getAuditLogs(
             @RequestParam(required = false) String action,
             @RequestParam(required = false) Long adminId,
+            @RequestParam(required = false) String targetType,
             Pageable pageable) {
-        // TODO: Implement specification
-        return ResponseEntity.ok(Page.empty());
+        Specification<AuditLog> spec = Specification.where(null);
+        if (action != null && !action.trim().isEmpty()) {
+            spec = spec.and((root, query, cb) ->
+                    cb.like(cb.lower(root.get("action")), "%" + action.toLowerCase() + "%"));
+        }
+        if (adminId != null) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("admin").get("id"), adminId));
+        }
+        if (targetType != null && !targetType.trim().isEmpty()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("targetType"), targetType));
+        }
+        return ResponseEntity.ok(adminService.getAuditLogs(spec, pageable));
     }
 
     @GetMapping("/audit-logs/{logId}")
-    public ResponseEntity<?> getAuditLogDetail(@PathVariable Long logId) {
-        // TODO: Implement
-        return ResponseEntity.ok("Audit log detail");
+    public ResponseEntity<AuditLogResponse> getAuditLogDetail(@PathVariable Long logId) {
+        return ResponseEntity.ok(adminService.getAuditLogById(logId));
     }
 
     // ===== NITRO PAYMENT ADMIN =====
 
     @GetMapping("/payment/orders")
-    public ResponseEntity<?> getAllNitroOrders(
+    public ResponseEntity<Page<NitroOrderSummary>> getAllNitroOrders(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String search,
             Pageable pageable) {
-        // TODO: Implement - extend NitroPaymentController
-        return ResponseEntity.ok(List.of());
+        Specification<NitroOrder> spec = Specification.where(null);
+        if (status != null && !status.trim().isEmpty()) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), status));
+        }
+        if (search != null && !search.trim().isEmpty()) {
+            spec = spec.and((root, query, cb) ->
+                    cb.like(cb.lower(root.get("vnpTxnRef")), "%" + search.toLowerCase() + "%"));
+        }
+        return ResponseEntity.ok(adminService.getAllOrders(spec, pageable));
     }
 
     @GetMapping("/payment/orders/{txnRef}")
-    public ResponseEntity<?> getNitroOrderDetail(@PathVariable String txnRef) {
-        // TODO: Implement
-        return ResponseEntity.ok("Order detail");
+    public ResponseEntity<NitroOrderSummary> getNitroOrderDetail(@PathVariable String txnRef) {
+        return ResponseEntity.ok(adminService.getOrderByTxnRef(txnRef));
     }
 
     @PutMapping("/payment/orders/{txnRef}/approve")
-    public ResponseEntity<Void> approveOrder(@PathVariable String txnRef) {
-        // TODO: Implement
+    public ResponseEntity<Void> approveOrder(
+            @PathVariable String txnRef,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        adminService.approveOrder(txnRef, userDetails.getId());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/payment/orders/{txnRef}/reject")
-    public ResponseEntity<Void> rejectOrder(@PathVariable String txnRef) {
-        // TODO: Implement
+    public ResponseEntity<Void> rejectOrder(
+            @PathVariable String txnRef,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        adminService.rejectOrder(txnRef, userDetails.getId());
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/payment/stats")
+    public ResponseEntity<Map<String, Object>> getRevenueStats() {
+        return ResponseEntity.ok(adminService.getRevenueStats());
     }
 }

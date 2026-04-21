@@ -21,7 +21,9 @@ public class DMCallService {
      * Tạo cuộc gọi mới
      */
     public DMCallState initiateCall(String conversationId, String callerId, String receiverId,
-                                    String callerName, String receiverName) {
+                                    String callerName, String receiverName,
+                                    String callerAvatar, String receiverAvatar,
+                                    DMCallState.CallType callType) {
         // Kiểm tra xem có cuộc gọi đang active không
         DMCallState existingCall = activeCalls.get(conversationId);
         if (existingCall != null && existingCall.getStatus() == CallStatus.PENDING) {
@@ -38,7 +40,11 @@ public class DMCallService {
                 .receiverId(receiverId)
                 .callerName(callerName)
                 .receiverName(receiverName)
+                .callerAvatar(callerAvatar)
+                .receiverAvatar(receiverAvatar)
+                .callType(callType != null ? callType : DMCallState.CallType.VOICE)
                 .status(CallStatus.PENDING)
+                .callerCameraOn(callType == DMCallState.CallType.VIDEO)
                 .startedAt(System.currentTimeMillis())
                 .build();
         

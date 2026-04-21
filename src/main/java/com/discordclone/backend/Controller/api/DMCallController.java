@@ -4,8 +4,10 @@ import com.discordclone.backend.dto.voice.DMCallMessage;
 import com.discordclone.backend.dto.voice.DMCallState;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.entity.mongo.Conversation;
+import com.discordclone.backend.entity.mongo.DirectMessage;
 import com.discordclone.backend.repository.UserRepository;
 import com.discordclone.backend.repository.mongo.ConversationRepository;
+import com.discordclone.backend.repository.mongo.DirectMessageRepository;
 import com.discordclone.backend.service.voice.DMCallService;
 import com.discordclone.backend.utils.agora.RtcTokenBuilder2;
 import lombok.RequiredArgsConstructor;
@@ -16,10 +18,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/dm/call")
@@ -38,12 +37,12 @@ public class DMCallController {
     private final DMCallService dmCallService;
     private final ConversationRepository conversationRepository;
     private final UserRepository userRepository;
+    private final DirectMessageRepository directMessageRepository;
     private final MongoTemplate mongoTemplate;
     private final SimpMessagingTemplate messagingTemplate;
     
     /**
      * Lấy token Agora cho DM call
-     * GET /api/dm/call/token?conversationId=xxx&userId=xxx
      */
     @GetMapping("/token")
     public ResponseEntity<?> getToken(
@@ -51,26 +50,19 @@ public class DMCallController {
             @RequestParam String userId) {
         
         try {
-            // Kiểm tra cuộc gọi có active không
             DMCallState callState = dmCallService.getCallState(conversationId);
             if (callState == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("Không có cuộc gọi nào đang active");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không có cuộc gọi nào đang active");
             }
             
-            // Kiểm tra user có trong cuộc gọi không
             if (!callState.getCallerId().equals(userId) && !callState.getReceiverId().equals(userId)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body("Bạn không tham gia cuộc gọi này");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body("Bạn không tham gia cuộc gọi này");
             }
             
-            // Kiểm tra cuộc gọi đã được chấp nhận chưa
             if (callState.getStatus() != DMCallState.CallStatus.ACCEPTED) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body("Cuộc gọi chưa được chấp nhận");
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Cuộc gọi chưa được chấp nhận");
             }
             
-            // Tạo token
             String token = generateToken(conversationId, userId);
             
             Map<String, Object> response = new HashMap<>();
@@ -80,263 +72,215 @@ public class DMCallController {
             response.put("userId", userId);
             
             return ResponseEntity.ok(response);
-            
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Lỗi khi tạo token: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Lỗi khi tạo token: " + e.getMessage());
         }
     }
     
-    /**
-     * Bắt đầu cuộc gọi
-     * POST /api/dm/call/start
-     */
     @PostMapping("/start")
     public ResponseEntity<?> startCall(@RequestBody Map<String, String> body) {
         try {
             String conversationId = body.get("conversationId");
             String callerId = body.get("callerId");
+            String callTypeStr = body.getOrDefault("callType", "VOICE");
             
             if (conversationId == null || callerId == null) {
                 return ResponseEntity.badRequest().body("Thiếu thông tin");
             }
             
-            // Lấy thông tin conversation
-            Optional<Conversation> convOpt = conversationRepository.findById(conversationId);
-            if (convOpt.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Conversation không tồn tại");
+            DMCallState.CallType callType;
+            try {
+                callType = DMCallState.CallType.valueOf(callTypeStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                callType = DMCallState.CallType.VOICE;
             }
+            
+            Optional<Conversation> convOpt = conversationRepository.findById(conversationId);
+            if (convOpt.isEmpty()) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Conversation không tồn tại");
             
             Conversation conversation = convOpt.get();
+            String receiverId = conversation.getUser1Id().toString().equals(callerId) 
+                ? conversation.getUser2Id().toString() 
+                : conversation.getUser1Id().toString();
             
-            // Xác định receiver
-            String receiverId;
-            if (conversation.getUser1Id().toString().equals(callerId)) {
-                receiverId = conversation.getUser2Id().toString();
-            } else {
-                receiverId = conversation.getUser1Id().toString();
-            }
-            
-            // Lấy tên user
-            String callerName = "Unknown";
-            String receiverName = "Unknown";
+            String callerName = "Unknown", receiverName = "Unknown", callerAvatar = null, receiverAvatar = null;
             
             Optional<User> callerOpt = userRepository.findById(Long.parseLong(callerId));
             if (callerOpt.isPresent()) {
                 User caller = callerOpt.get();
                 callerName = caller.getDisplayName() != null ? caller.getDisplayName() : caller.getUserName();
+                callerAvatar = caller.getAvatarUrl();
             }
             
             Optional<User> receiverOpt = userRepository.findById(Long.parseLong(receiverId));
             if (receiverOpt.isPresent()) {
                 User receiver = receiverOpt.get();
                 receiverName = receiver.getDisplayName() != null ? receiver.getDisplayName() : receiver.getUserName();
+                receiverAvatar = receiver.getAvatarUrl();
             }
             
-            // Tạo cuộc gọi
-            DMCallState callState = dmCallService.initiateCall(
-                    conversationId, callerId, receiverId, callerName, receiverName);
+            DMCallState callState = dmCallService.initiateCall(conversationId, callerId, receiverId, 
+                callerName, receiverName, callerAvatar, receiverAvatar, callType);
             
-            // Broadcast qua WebSocket để thông báo cho người nhận
             DMCallMessage wsMessage = DMCallMessage.builder()
                     .type(DMCallMessage.DMCallMessageType.CALL_INCOMING)
                     .callState(callState)
                     .conversationId(conversationId)
                     .callerId(callerId)
                     .receiverId(receiverId)
+                    .callerName(callerName)
+                    .callerAvatar(callerAvatar)
+                    .callType(callType.name())
                     .build();
+            
             messagingTemplate.convertAndSend("/topic/dm/call/" + conversationId, wsMessage);
+            messagingTemplate.convertAndSend("/topic/user/" + receiverId + "/incoming-call", wsMessage);
             
             return ResponseEntity.ok(callState);
-            
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Lỗi khi bắt đầu cuộc gọi: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Lỗi khi bắt đầu cuộc gọi: " + e.getMessage());
         }
     }
     
-    /**
-     * Chấp nhận cuộc gọi
-     * POST /api/dm/call/accept
-     */
     @PostMapping("/accept")
     public ResponseEntity<?> acceptCall(@RequestBody Map<String, String> body) {
         try {
-            String conversationId = body.get("conversationId");
-            String userId = body.get("userId");
-            
-            if (conversationId == null || userId == null) {
-                return ResponseEntity.badRequest().body("Thiếu thông tin");
-            }
-            
+            String conversationId = body.get("conversationId"), userId = body.get("userId");
             DMCallState callState = dmCallService.acceptCall(conversationId, userId);
-            if (callState == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("Không tìm thấy cuộc gọi hoặc không có quyền");
-            }
+            if (callState == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không tìm thấy cuộc gọi");
             
-            // Tạo tokens cho cả hai
+            if (callState.getCallType() == DMCallState.CallType.VIDEO) callState.setReceiverCameraOn(true);
+            
             String callerToken = generateToken(conversationId, callState.getCallerId());
             String receiverToken = generateToken(conversationId, callState.getReceiverId());
             dmCallService.setTokens(conversationId, callerToken, receiverToken);
             
-            // Broadcast qua WebSocket
             DMCallMessage wsMessage = DMCallMessage.builder()
                     .type(DMCallMessage.DMCallMessageType.CALL_ACCEPTED)
                     .callState(callState)
                     .conversationId(conversationId)
+                    .callType(callState.getCallType().name())
                     .build();
+            
             messagingTemplate.convertAndSend("/topic/dm/call/" + conversationId, wsMessage);
+            messagingTemplate.convertAndSend("/topic/user/" + callState.getCallerId() + "/incoming-call", wsMessage);
+            messagingTemplate.convertAndSend("/topic/user/" + callState.getReceiverId() + "/incoming-call", wsMessage);
             
             return ResponseEntity.ok(callState);
-            
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Lỗi khi chấp nhận cuộc gọi: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Lỗi: " + e.getMessage());
         }
     }
     
-    /**
-     * Từ chối cuộc gọi
-     * POST /api/dm/call/decline
-     */
     @PostMapping("/decline")
     public ResponseEntity<?> declineCall(@RequestBody Map<String, String> body) {
         try {
-            String conversationId = body.get("conversationId");
-            String userId = body.get("userId");
-            
+            String conversationId = body.get("conversationId"), userId = body.get("userId");
             DMCallState callState = dmCallService.declineCall(conversationId, userId);
-            if (callState == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("Không tìm thấy cuộc gọi");
-            }
+            if (callState == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không tìm thấy cuộc gọi");
             
-            // Broadcast qua WebSocket
             DMCallMessage wsMessage = DMCallMessage.builder()
                     .type(DMCallMessage.DMCallMessageType.CALL_DECLINED)
                     .callState(callState)
                     .conversationId(conversationId)
+                    .callType(callState.getCallType().name())
                     .build();
+            
             messagingTemplate.convertAndSend("/topic/dm/call/" + conversationId, wsMessage);
+            messagingTemplate.convertAndSend("/topic/user/" + callState.getCallerId() + "/incoming-call", wsMessage);
+            messagingTemplate.convertAndSend("/topic/user/" + callState.getReceiverId() + "/incoming-call", wsMessage);
+            
+            saveCallMessage(conversationId, Long.parseLong(userId), "Declined a " + callState.getCallType().name().toLowerCase() + " call");
             
             return ResponseEntity.ok(callState);
-            
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Lỗi: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Lỗi: " + e.getMessage());
         }
     }
     
-    /**
-     * Kết thúc cuộc gọi
-     * POST /api/dm/call/end
-     */
     @PostMapping("/end")
     public ResponseEntity<?> endCall(@RequestBody Map<String, String> body) {
         try {
-            String conversationId = body.get("conversationId");
-            String userId = body.get("userId");
-            
+            String conversationId = body.get("conversationId"), userId = body.get("userId");
             DMCallState callState = dmCallService.endCall(conversationId, userId);
-            if (callState == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("Không tìm thấy cuộc gọi");
-            }
+            if (callState == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không tìm thấy cuộc gọi");
             
-            // Broadcast qua WebSocket
             DMCallMessage wsMessage = DMCallMessage.builder()
                     .type(DMCallMessage.DMCallMessageType.CALL_ENDED)
                     .callState(callState)
                     .conversationId(conversationId)
+                    .callType(callState.getCallType().name())
                     .build();
+            
             messagingTemplate.convertAndSend("/topic/dm/call/" + conversationId, wsMessage);
+            messagingTemplate.convertAndSend("/topic/user/" + callState.getCallerId() + "/incoming-call", wsMessage);
+            messagingTemplate.convertAndSend("/topic/user/" + callState.getReceiverId() + "/incoming-call", wsMessage);
+            
+            long duration = (System.currentTimeMillis() - callState.getStartedAt()) / 1000;
+            saveCallMessage(conversationId, Long.parseLong(userId), "Call ended • " + String.format("%d:%02d", duration / 60, duration % 60));
             
             return ResponseEntity.ok(callState);
-            
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Lỗi: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Lỗi: " + e.getMessage());
         }
     }
     
-    /**
-     * Cập nhật trạng thái mute/deafen
-     * POST /api/dm/call/state
-     */
     @PostMapping("/state")
     public ResponseEntity<?> updateState(@RequestBody Map<String, Object> body) {
         try {
-            String conversationId = (String) body.get("conversationId");
-            String userId = (String) body.get("userId");
-            Boolean isMuted = (Boolean) body.get("isMuted");
-            Boolean isDeafened = (Boolean) body.get("isDeafened");
+            String conversationId = (String) body.get("conversationId"), userId = (String) body.get("userId");
+            Boolean isMuted = (Boolean) body.get("isMuted"), isDeafened = (Boolean) body.get("isDeafened"), isCameraOn = (Boolean) body.get("isCameraOn");
             
-            boolean muteValue = isMuted != null ? isMuted : false;
-            boolean deafenValue = isDeafened != null ? isDeafened : false;
+            DMCallState callState = dmCallService.updateState(conversationId, userId, isMuted != null ? isMuted : false, isDeafened != null ? isDeafened : false);
+            if (callState == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không tìm thấy cuộc gọi");
             
-            DMCallState callState = dmCallService.updateState(conversationId, userId, muteValue, deafenValue);
-            if (callState == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body("Không tìm thấy cuộc gọi");
+            if (isCameraOn != null) {
+                if (callState.getCallerId().equals(userId)) callState.setCallerCameraOn(isCameraOn);
+                else if (callState.getReceiverId().equals(userId)) callState.setReceiverCameraOn(isCameraOn);
             }
             
-            // Broadcast state update qua WebSocket
             DMCallMessage wsMessage = DMCallMessage.builder()
                     .type(DMCallMessage.DMCallMessageType.STATE_UPDATE)
                     .callState(callState)
                     .conversationId(conversationId)
-                    .isMuted(muteValue)
-                    .isDeafened(deafenValue)
+                    .isMuted(isMuted).isDeafened(isDeafened).isCameraOn(isCameraOn)
+                    .callType(callState.getCallType().name())
                     .build();
             messagingTemplate.convertAndSend("/topic/dm/call/" + conversationId, wsMessage);
             
             return ResponseEntity.ok(callState);
-            
         } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                    .body("Lỗi: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Lỗi: " + e.getMessage());
         }
     }
     
-    /**
-     * Lấy trạng thái cuộc gọi
-     * GET /api/dm/call/status?conversationId=xxx
-     */
     @GetMapping("/status")
     public ResponseEntity<?> getStatus(@RequestParam String conversationId) {
         DMCallState callState = dmCallService.getCallState(conversationId);
-        if (callState == null) {
-            return ResponseEntity.ok(Map.of("hasActiveCall", false));
-        }
-        
-        Map<String, Object> response = new HashMap<>();
-        response.put("hasActiveCall", true);
-        response.put("callState", callState);
-        
-        return ResponseEntity.ok(response);
+        if (callState == null) return ResponseEntity.ok(Map.of("hasActiveCall", false));
+        return ResponseEntity.ok(Map.of("hasActiveCall", true, "callState", callState));
     }
     
-    /**
-     * Tạo Agora token
-     */
     private String generateToken(String channelName, String userId) {
-        if (appCertificate == null || appCertificate.isBlank()) {
-            return ""; // Testing mode
-        }
-        
+        if (appCertificate == null || appCertificate.isBlank()) return "";
         try {
-            RtcTokenBuilder2 tokenBuilder = new RtcTokenBuilder2();
-            return tokenBuilder.buildTokenWithUserAccount(
-                    appId,
-                    appCertificate,
-                    channelName,
-                    userId,
-                    RtcTokenBuilder2.Role.ROLE_PUBLISHER,
-                    TOKEN_EXPIRE_TIME,
-                    TOKEN_EXPIRE_TIME);
-        } catch (Exception e) {
-            return "";
-        }
+            return new RtcTokenBuilder2().buildTokenWithUserAccount(appId, appCertificate, channelName, userId, 
+                RtcTokenBuilder2.Role.ROLE_PUBLISHER, TOKEN_EXPIRE_TIME, TOKEN_EXPIRE_TIME);
+        } catch (Exception e) { return ""; }
+    }
+    
+    private void saveCallMessage(String conversationId, Long senderId, String content) {
+        try {
+            DirectMessage message = DirectMessage.builder()
+                    .conversationId(conversationId)
+                    .senderId(senderId)
+                    .content("[Call] " + content)
+                    .createdAt(new Date())
+                    .updatedAt(new Date())
+                    .isRead(false)
+                    .build();
+            directMessageRepository.save(message);
+            messagingTemplate.convertAndSend("/topic/dm/messages/" + conversationId, message);
+        } catch (Exception e) { System.err.println("Lỗi lưu call message: " + e.getMessage()); }
     }
 }

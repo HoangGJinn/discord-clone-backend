@@ -17,8 +17,12 @@ public class DMCallMessage {
     private String conversationId;
     private String callerId;
     private String receiverId;
+    private String callerName;
+    private String callerAvatar;
+    private String callType;
     private Boolean isMuted;
     private Boolean isDeafened;
+    private Boolean isCameraOn;
     
     public enum DMCallMessageType {
         CALL_INCOMING,      // Có cuộc gọi đến

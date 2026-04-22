@@ -39,4 +39,7 @@ public interface FriendService {
 
     /** Danh sách lời mời ĐÃ GỬI đang chờ */
     List<FriendshipResponse> getSentRequests(Long userId);
+
+    /** Lấy thông tin quan hệ giữa 2 người dùng */
+    UserSearchResponse getFriendshipStatus(Long currentUserId, Long targetUserId);
 }

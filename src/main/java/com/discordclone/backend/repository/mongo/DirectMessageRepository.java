@@ -21,4 +21,9 @@ public interface DirectMessageRepository extends MongoRepository<DirectMessage, 
     long countByConversationIdAndSenderIdNot(String conversationId, Long senderId);
 
     long countByConversationIdAndSenderIdNotAndCreatedAtAfter(String conversationId, Long senderId, Date createdAt);
+
+    // Message search
+    Page<DirectMessage> findByConversationIdAndContentContainingIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+            String conversationId, String content, Pageable pageable);
 }
+

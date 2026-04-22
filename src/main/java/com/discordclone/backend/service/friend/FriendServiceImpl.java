@@ -247,6 +247,13 @@ public class FriendServiceImpl implements FriendService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public UserSearchResponse getFriendshipStatus(Long currentUserId, Long targetUserId) {
+        User targetUser = getUserById(targetUserId);
+        return buildUserSearchResponse(targetUser, currentUserId);
+    }
+
     // --- Helpers ---
 
     private User getUserById(Long id) {

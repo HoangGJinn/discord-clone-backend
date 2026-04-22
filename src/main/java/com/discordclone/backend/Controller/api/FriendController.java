@@ -66,6 +66,14 @@ public class FriendController {
         return ResponseEntity.ok(friendService.getFriends(userDetails.getId()));
     }
 
+    @GetMapping("/api/friends/status/{targetUserId}")
+    @Operation(summary = "Lấy trạng thái kết bạn với một user cụ thể")
+    public ResponseEntity<UserSearchResponse> getFriendshipStatus(
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        return ResponseEntity.ok(friendService.getFriendshipStatus(userDetails.getId(), targetUserId));
+    }
+
     @GetMapping("/api/friends/requests/received")
     @Operation(summary = "Lấy danh sách lời mời kết bạn nhận được (PENDING)")
     public ResponseEntity<List<FriendshipResponse>> getPendingRequests(

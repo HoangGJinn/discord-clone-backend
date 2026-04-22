@@ -21,4 +21,5 @@ public class AdminServerSummary {
     private int memberCount;
     private int channelCount;
     private LocalDateTime createdAt;
+    private boolean isBanned;
 }

@@ -27,22 +27,26 @@ public interface AdminService {
     // User Management
     Page<AdminUserSummary> getAllUsers(Specification<User> spec, Pageable pageable);
 
-    void disableUser(Long userId);
+    void disableUser(Long userId, Long adminId, String ipAddress);
 
-    void enableUser(Long userId);
+    void enableUser(Long userId, Long adminId, String ipAddress);
 
-    void banUser(Long userId, String reason);
+    void banUser(Long userId, String reason, Long adminId, String ipAddress);
 
-    void unbanUser(Long userId);
+    void unbanUser(Long userId, Long adminId, String ipAddress);
 
-    void bulkDisableUsers(List<Long> userIds, String reason);
+    void bulkDisableUsers(List<Long> userIds, String reason, Long adminId, String ipAddress);
 
-    void bulkBanUsers(List<Long> userIds, String reason);
+    void bulkBanUsers(List<Long> userIds, String reason, Long adminId, String ipAddress);
 
     // Server Management
     Page<AdminServerSummary> getAllServers(Specification<Server> spec, Pageable pageable);
 
-    void deleteServer(Long serverId);
+    void deleteServer(Long serverId, Long adminId, String ipAddress);
+
+    void banServer(Long serverId, String reason, Long adminId, String ipAddress);
+
+    void unbanServer(Long serverId, Long adminId, String ipAddress);
 
     // Report Management
     Page<ReportedMessageResponse> getAllReports(Specification<ReportedMessage> spec, Pageable pageable);
@@ -56,16 +60,16 @@ public interface AdminService {
     // Moderation Actions
     void deleteMessage(String messageId);
 
-    void warnUser(Long userId, String reason, Long adminId);
+    void warnUser(Long userId, String reason, Long adminId, String ipAddress);
 
-    void banUserPermanently(Long userId, String reason, Long adminId);
+    void banUserPermanently(Long userId, String reason, Long adminId, String ipAddress);
 
     // Blacklist Management
     List<BlacklistKeywordResponse> getBlacklist();
 
-    BlacklistKeywordResponse addBlacklistKeyword(String keyword, Long adminId);
+    BlacklistKeywordResponse addBlacklistKeyword(String keyword, Long adminId, String ipAddress);
 
-    void removeBlacklistKeyword(Long blacklistId);
+    void removeBlacklistKeyword(Long blacklistId, Long adminId, String ipAddress);
 
     boolean isMessageContainsBlacklistedWord(String content);
 
@@ -81,9 +85,9 @@ public interface AdminService {
 
     NitroOrderSummary getOrderByTxnRef(String txnRef);
 
-    void approveOrder(String txnRef, Long adminId);
+    void approveOrder(String txnRef, Long adminId, String ipAddress);
 
-    void rejectOrder(String txnRef, Long adminId);
+    void rejectOrder(String txnRef, Long adminId, String ipAddress);
 
     Map<String, Object> getRevenueStats();
 }

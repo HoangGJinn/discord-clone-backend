@@ -12,7 +12,12 @@ import com.discordclone.backend.entity.jpa.Server;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.security.jwt.JwtUtils;
 import com.discordclone.backend.security.services.UserDetailsImpl;
+import com.discordclone.backend.entity.enums.ERole;
+import com.discordclone.backend.entity.jpa.Role;
 import com.discordclone.backend.service.admin.AdminService;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Subquery;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -23,6 +28,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Map;
 
@@ -91,6 +97,18 @@ public class AdminController {
         if (active != null) {
             spec = spec.and((root, query, cb) -> cb.equal(root.get("isActive"), active));
         }
+
+        // Exclude all users with ADMIN role
+        spec = spec.and((root, query, cb) -> {
+            Subquery<Long> adminSubquery = query.subquery(Long.class);
+            Root<User> adminRoot = adminSubquery.from(User.class);
+            Join<User, Role> roleJoin = adminRoot.join("roles");
+            adminSubquery.select(adminRoot.get("id"))
+                    .where(cb.equal(roleJoin.get("name"), ERole.ADMIN));
+            
+            return cb.not(root.get("id").in(adminSubquery));
+        });
+
         return ResponseEntity.ok(adminService.getAllUsers(spec, pageable));
     }
 
@@ -101,38 +119,38 @@ public class AdminController {
     }
 
     @PutMapping("/users/{userId}/disable")
-    public ResponseEntity<Void> disableUser(@PathVariable Long userId) {
-        adminService.disableUser(userId);
+    public ResponseEntity<Void> disableUser(@PathVariable Long userId, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.disableUser(userId, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/users/{userId}/enable")
-    public ResponseEntity<Void> enableUser(@PathVariable Long userId) {
-        adminService.enableUser(userId);
+    public ResponseEntity<Void> enableUser(@PathVariable Long userId, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.enableUser(userId, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/users/{userId}/ban")
-    public ResponseEntity<Void> banUser(@PathVariable Long userId, @RequestParam String reason) {
-        adminService.banUser(userId, reason);
+    public ResponseEntity<Void> banUser(@PathVariable Long userId, @RequestParam String reason, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.banUser(userId, reason, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/users/{userId}/unban")
-    public ResponseEntity<Void> unbanUser(@PathVariable Long userId) {
-        adminService.unbanUser(userId);
+    public ResponseEntity<Void> unbanUser(@PathVariable Long userId, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.unbanUser(userId, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/users/bulk-disable")
-    public ResponseEntity<Void> bulkDisableUsers(@Valid @RequestBody BulkUserActionRequest request) {
-        adminService.bulkDisableUsers(request.getUserIds(), request.getReason());
+    public ResponseEntity<Void> bulkDisableUsers(@Valid @RequestBody BulkUserActionRequest request, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest servletRequest) {
+        adminService.bulkDisableUsers(request.getUserIds(), request.getReason(), userDetails.getId(), servletRequest.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/users/bulk-ban")
-    public ResponseEntity<Void> bulkBanUsers(@Valid @RequestBody BulkUserActionRequest request) {
-        adminService.bulkBanUsers(request.getUserIds(), request.getReason());
+    public ResponseEntity<Void> bulkBanUsers(@Valid @RequestBody BulkUserActionRequest request, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest servletRequest) {
+        adminService.bulkBanUsers(request.getUserIds(), request.getReason(), userDetails.getId(), servletRequest.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
@@ -141,11 +159,16 @@ public class AdminController {
     @GetMapping("/servers")
     public ResponseEntity<Page<AdminServerSummary>> getAllServers(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) Boolean active,
             Pageable pageable) {
         Specification<Server> spec = Specification.where(null);
         if (search != null && !search.trim().isEmpty()) {
             spec = spec.and((root, query, cb) -> 
                     cb.like(cb.lower(root.get("name")), "%" + search.toLowerCase() + "%"));
+        }
+        if (active != null) {
+            // isBanned = !active
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("isBanned"), !active));
         }
         return ResponseEntity.ok(adminService.getAllServers(spec, pageable));
     }
@@ -157,8 +180,20 @@ public class AdminController {
     }
 
     @DeleteMapping("/servers/{serverId}")
-    public ResponseEntity<Void> deleteServer(@PathVariable Long serverId) {
-        adminService.deleteServer(serverId);
+    public ResponseEntity<Void> deleteServer(@PathVariable Long serverId, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.deleteServer(serverId, userDetails.getId(), request.getRemoteAddr());
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/servers/{serverId}/ban")
+    public ResponseEntity<Void> banServer(@PathVariable Long serverId, @RequestParam(required = false, defaultValue = "Violated terms") String reason, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.banServer(serverId, reason, userDetails.getId(), request.getRemoteAddr());
+        return ResponseEntity.ok().build();
+    }
+
+    @PutMapping("/servers/{serverId}/unban")
+    public ResponseEntity<Void> unbanServer(@PathVariable Long serverId, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.unbanServer(serverId, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
@@ -207,8 +242,9 @@ public class AdminController {
     public ResponseEntity<Void> warnUser(
             @PathVariable Long userId,
             @RequestParam String reason,
-            @AuthenticationPrincipal UserDetailsImpl userDetails) {
-        adminService.warnUser(userId, reason, userDetails.getId());
+            @AuthenticationPrincipal UserDetailsImpl userDetails,
+            HttpServletRequest request) {
+        adminService.warnUser(userId, reason, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
@@ -216,8 +252,9 @@ public class AdminController {
     public ResponseEntity<Void> banUserPermanent(
             @PathVariable Long userId,
             @RequestParam String reason,
-            @AuthenticationPrincipal UserDetailsImpl userDetails) {
-        adminService.banUserPermanently(userId, reason, userDetails.getId());
+            @AuthenticationPrincipal UserDetailsImpl userDetails,
+            HttpServletRequest request) {
+        adminService.banUserPermanently(userId, reason, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
@@ -231,13 +268,14 @@ public class AdminController {
     @PostMapping("/moderation/blacklist")
     public ResponseEntity<BlacklistKeywordResponse> addBlacklistKeyword(
             @Valid @RequestBody BlacklistKeywordRequest request,
-            @AuthenticationPrincipal UserDetailsImpl userDetails) {
-        return ResponseEntity.ok(adminService.addBlacklistKeyword(request.getKeyword(), userDetails.getId()));
+            @AuthenticationPrincipal UserDetailsImpl userDetails,
+            HttpServletRequest servletRequest) {
+        return ResponseEntity.ok(adminService.addBlacklistKeyword(request.getKeyword(), userDetails.getId(), servletRequest.getRemoteAddr()));
     }
 
     @DeleteMapping("/moderation/blacklist/{blacklistId}")
-    public ResponseEntity<Void> removeBlacklistKeyword(@PathVariable Long blacklistId) {
-        adminService.removeBlacklistKeyword(blacklistId);
+    public ResponseEntity<Void> removeBlacklistKeyword(@PathVariable Long blacklistId, @AuthenticationPrincipal UserDetailsImpl userDetails, HttpServletRequest request) {
+        adminService.removeBlacklistKeyword(blacklistId, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
@@ -294,16 +332,18 @@ public class AdminController {
     @PutMapping("/payment/orders/{txnRef}/approve")
     public ResponseEntity<Void> approveOrder(
             @PathVariable String txnRef,
-            @AuthenticationPrincipal UserDetailsImpl userDetails) {
-        adminService.approveOrder(txnRef, userDetails.getId());
+            @AuthenticationPrincipal UserDetailsImpl userDetails,
+            HttpServletRequest request) {
+        adminService.approveOrder(txnRef, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 
     @PutMapping("/payment/orders/{txnRef}/reject")
     public ResponseEntity<Void> rejectOrder(
             @PathVariable String txnRef,
-            @AuthenticationPrincipal UserDetailsImpl userDetails) {
-        adminService.rejectOrder(txnRef, userDetails.getId());
+            @AuthenticationPrincipal UserDetailsImpl userDetails,
+            HttpServletRequest request) {
+        adminService.rejectOrder(txnRef, userDetails.getId(), request.getRemoteAddr());
         return ResponseEntity.ok().build();
     }
 

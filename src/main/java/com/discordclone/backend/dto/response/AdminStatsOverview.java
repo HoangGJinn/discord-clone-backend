@@ -21,4 +21,10 @@ public class AdminStatsOverview {
     private Long newUsersToday;
     private Long totalReports;
     private Long pendingReports;
+
+    // Growth percentages (e.g. +12.5)
+    private Double userGrowth;
+    private Double serverGrowth;
+    private Double messageGrowth;
+    private Double revenueGrowth;
 }

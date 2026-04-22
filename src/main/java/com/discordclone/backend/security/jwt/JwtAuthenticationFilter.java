@@ -1,5 +1,7 @@
 package com.discordclone.backend.security.jwt;
 
+import com.discordclone.backend.exception.AccountNotActiveException;
+import com.discordclone.backend.exception.AccountNotVerifiedException;
 import com.discordclone.backend.security.services.UserDetailsServiceImpl;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -63,8 +65,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
+        } catch (AccountNotActiveException | AccountNotVerifiedException e) {
+            logger.error("Authentication failed: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"message\": \"" + e.getMessage() + "\"}");
+            return;
         } catch (Exception e) {
-            logger.error("Cannot set user authentication: {}", e);
+            logger.error("Cannot set user authentication: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);

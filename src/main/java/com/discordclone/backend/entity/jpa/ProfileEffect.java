@@ -31,6 +31,9 @@ public class ProfileEffect {
     @Column(nullable = false)
     private Double price;
 
+    @Column(nullable = false)
+    private String type; // AVATAR, BANNER, CARD
+
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private boolean isActive = true;

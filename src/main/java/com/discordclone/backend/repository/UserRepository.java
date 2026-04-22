@@ -40,6 +40,8 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
     @Query("SELECT COUNT(u) FROM User u WHERE u.createdAt >= :startOfDay")
     Long countByCreatedAtAfter(@Param("startOfDay") LocalDateTime startOfDay);
 
+    Long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
     // Count friends for a user
     @Query("SELECT COUNT(f) FROM Friendship f WHERE (f.sender.id = :userId OR f.receiver.id = :userId) AND f.status = 'ACCEPTED'")
     Integer countFriendsByUserId(@Param("userId") Long userId);

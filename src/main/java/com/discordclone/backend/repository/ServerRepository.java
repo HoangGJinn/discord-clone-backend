@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,4 +39,6 @@ public interface ServerRepository extends JpaRepository<Server, Long>, JpaSpecif
 
     @Query("SELECT s FROM Server s LEFT JOIN s.members sm GROUP BY s.id ORDER BY COUNT(sm) DESC")
     List<Server> findTopServersByMemberCount(org.springframework.data.domain.Pageable pageable);
+
+    Long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
 }

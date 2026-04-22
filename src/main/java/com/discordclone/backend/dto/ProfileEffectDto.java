@@ -1,5 +1,6 @@
 package com.discordclone.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,6 +18,9 @@ public class ProfileEffectDto {
     private String imageUrl;
     private String animationUrl;
     private Double price;
+    private String type;
+    
+    @JsonProperty("isActive")
     private boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

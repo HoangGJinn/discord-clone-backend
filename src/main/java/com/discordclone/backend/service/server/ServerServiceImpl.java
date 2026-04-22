@@ -153,6 +153,14 @@ public class ServerServiceImpl implements ServerService {
             throw new RuntimeException("Bạn đã là thành viên của server này");
         }
 
+        // Kiểm tra bị ban không
+        List<ServerMember> bannedCheck = serverMemberRepository.findByServerId(server.getId());
+        boolean isBanned = bannedCheck.stream()
+                .anyMatch(m -> m.getUser().getId().equals(userId) && Boolean.TRUE.equals(m.getIsBanned()));
+        if (isBanned) {
+            throw new RuntimeException("Bạn đã bị cấm khỏi server này");
+        }
+
         // Thêm thành viên mới
         ServerMember member = ServerMember.builder()
                 .user(user)
@@ -171,10 +179,48 @@ public class ServerServiceImpl implements ServerService {
 
         // Owner không thể rời server
         if (server.getOwner().getId().equals(userId)) {
-            throw new RuntimeException("Chủ sở hữu không thể rời server. Hãy chuyển quyền sở hữu hoặc xóa server.");
+            throw new RuntimeException("Bạn không thể rời server khi đang là chủ sở hữu. Hãy cấp quyền owner cho một thành viên khác trước khi rời server.");
         }
 
         serverMemberRepository.deleteByServerIdAndUserId(serverId, userId);
+    }
+
+    @Override
+    public void transferOwnership(Long serverId, Long currentOwnerId, Long newOwnerId) {
+        Server server = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResourceNotFoundException("Server không tồn tại"));
+
+        // Kiểm tra quyền (phải là owner hiện tại)
+        if (!server.getOwner().getId().equals(currentOwnerId)) {
+            throw new RuntimeException("Chỉ chủ sở hữu hiện tại mới có thể chuyển quyền sở hữu");
+        }
+
+        if (currentOwnerId.equals(newOwnerId)) {
+            throw new RuntimeException("Bạn đã là chủ sở hữu của server này rồi");
+        }
+
+        User newOwner = userRepository.findById(newOwnerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Thành viên mới không tồn tại"));
+
+        // Kiểm tra newOwner có phải là member của server không
+        ServerMember newOwnerMember = serverMemberRepository.findByServerIdAndUserId(serverId, newOwnerId)
+                .orElseThrow(() -> new RuntimeException("Người dùng được chọn không phải là thành viên của server này"));
+
+        // Kiểm tra currentOwnerMember
+        ServerMember currentOwnerMember = serverMemberRepository.findByServerIdAndUserId(serverId, currentOwnerId)
+                .orElseThrow(() -> new RuntimeException("Lỗi dữ liệu: Không tìm thấy membership của owner hiện tại"));
+
+        // 1. Cập nhật Server entity
+        server.setOwner(newOwner);
+        serverRepository.save(server);
+
+        // 2. Cập nhật role của owner cũ (thành ADMIN hoặc MEMBER - ở đây chọn ADMIN cho tiện quản lý tiếp)
+        currentOwnerMember.setRole(MemberRole.ADMIN);
+        serverMemberRepository.save(currentOwnerMember);
+
+        // 3. Cập nhật role của owner mới
+        newOwnerMember.setRole(MemberRole.OWNER);
+        serverMemberRepository.save(newOwnerMember);
     }
 
     @Override
@@ -198,6 +244,83 @@ public class ServerServiceImpl implements ServerService {
         return members.stream()
                 .map(this::mapToMemberResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public void kickMember(Long serverId, Long targetUserId, Long requesterId) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        // Chỉ OWNER/ADMIN mới được kick
+        if (requester.getRole() != MemberRole.OWNER) {
+            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể kick thành viên");
+        }
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể kick chủ sở hữu server");
+        }
+
+        serverMemberRepository.delete(target);
+    }
+
+    @Override
+    public void banMember(Long serverId, Long targetUserId, Long requesterId) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        if (requester.getRole() != MemberRole.OWNER) {
+            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể ban thành viên");
+        }
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể ban chủ sở hữu server");
+        }
+
+        target.setIsBanned(true);
+        serverMemberRepository.save(target);
+        serverMemberRepository.delete(target);
+    }
+
+    @Override
+    public void timeoutMember(Long serverId, Long targetUserId, Long requesterId, int minutes) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        if (requester.getRole() != MemberRole.OWNER) {
+            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể timeout thành viên");
+        }
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể timeout chủ sở hữu server");
+        }
+        if (minutes <= 0) {
+            throw new RuntimeException("Thời gian timeout phải lớn hơn 0 phút");
+        }
+
+        target.setTimeoutUntil(java.time.LocalDateTime.now().plusMinutes(minutes));
+        serverMemberRepository.save(target);
+    }
+
+    @Override
+    public void removeTimeout(Long serverId, Long targetUserId, Long requesterId) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        if (requester.getRole() != MemberRole.OWNER) {
+            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể gỡ timeout");
+        }
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        target.setTimeoutUntil(null);
+        serverMemberRepository.save(target);
     }
 
     // ============== Helper Methods ==============
@@ -347,6 +470,8 @@ public class ServerServiceImpl implements ServerService {
                 .avatarEffectId(member.getUser().getAvatarEffectId())
                 .bannerEffectId(member.getUser().getBannerEffectId())
                 .cardEffectId(member.getUser().getCardEffectId())
+                .isBanned(member.getIsBanned())
+                .timeoutUntil(member.getTimeoutUntil())
                 .build();
     }
 }

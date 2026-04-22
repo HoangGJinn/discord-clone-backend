@@ -38,8 +38,11 @@ public class MessageServiceImpl implements MessageService {
         @Override
         public ChatMessageResponse saveMessage(Long channelId, ChatMessageRequest req) {
                 // Verify channel exists
-                channelRepository.findById(channelId)
+                Channel channel = channelRepository.findById(channelId)
                                 .orElseThrow(() -> new RuntimeException("Channel not found"));
+
+                // Kiểm tra timeout của user trong server
+                checkUserTimeout(channel.getServer().getId(), req.getSenderId());
 
                 // Verify sender exists
                 User sender = userRepository.findById(req.getSenderId())
@@ -122,6 +125,11 @@ public class MessageServiceImpl implements MessageService {
                         throw new RuntimeException("You are not allowed to edit this message");
                 }
 
+                // Kiểm tra timeout
+                Channel channel = channelRepository.findById(message.getChannelId())
+                                .orElseThrow(() -> new RuntimeException("Channel not found"));
+                checkUserTimeout(channel.getServer().getId(), userId);
+
                 message.setContent(newContent);
                 message.setEdited(true);
                 message.setUpdatedAt(new Date());
@@ -142,6 +150,11 @@ public class MessageServiceImpl implements MessageService {
         public void addReaction(String messageId, Long userId, String emoji) {
                 ChannelMessage message = messageRepository.findById(messageId)
                                 .orElseThrow(() -> new RuntimeException("Message not found"));
+
+                // Kiểm tra timeout
+                Channel channel = channelRepository.findById(message.getChannelId())
+                                .orElseThrow(() -> new RuntimeException("Channel not found"));
+                checkUserTimeout(channel.getServer().getId(), userId);
 
                 boolean alreadyReacted = message.getReactions().stream()
                                 .anyMatch(r -> r.getUserId().equals(userId) && r.getEmoji().equals(emoji));
@@ -287,5 +300,13 @@ public class MessageServiceImpl implements MessageService {
                         // FCM lỗi không được ảnh hưởng flow chính
                         System.err.println("[FCM] sendServerChannelNotification failed: " + e.getMessage());
                 }
+        }
+        private void checkUserTimeout(Long serverId, Long userId) {
+                serverMemberRepository.findByServerIdAndUserId(serverId, userId)
+                                .ifPresent(member -> {
+                                        if (member.getTimeoutUntil() != null && member.getTimeoutUntil().isAfter(java.time.LocalDateTime.now())) {
+                                                throw new RuntimeException("Bạn đang bị cấm chat (timeout) đến " + member.getTimeoutUntil());
+                                        }
+                                });
         }
 }

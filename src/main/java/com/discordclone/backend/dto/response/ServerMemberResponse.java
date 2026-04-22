@@ -27,4 +27,7 @@ public class ServerMemberResponse {
     private String avatarEffectId;
     private String bannerEffectId;
     private String cardEffectId;
+    private Boolean isBanned;
+    private LocalDateTime timeoutUntil;
 }
+

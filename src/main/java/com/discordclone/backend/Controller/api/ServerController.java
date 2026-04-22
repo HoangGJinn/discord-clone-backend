@@ -117,4 +117,61 @@ public class ServerController {
         List<ServerMemberResponse> members = serverService.getServerMembers(serverId);
         return ResponseEntity.ok(members);
     }
+
+    // Chuyển quyền sở hữu server - chỉ OWNER mới được làm
+    @PostMapping("/{serverId}/transfer-ownership")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> transferOwnership(
+            @PathVariable Long serverId,
+            @RequestParam Long newOwnerId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.transferOwnership(serverId, userDetails.getId(), newOwnerId);
+        return ResponseEntity.ok(Map.of("message", "Đã chuyển quyền sở hữu server thành công"));
+    }
+
+    // Kick thành viên - chỉ OWNER
+    @DeleteMapping("/{serverId}/members/{targetUserId}/kick")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> kickMember(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.kickMember(serverId, targetUserId, userDetails.getId());
+        return ResponseEntity.ok(Map.of("message", "Đã kick thành viên"));
+    }
+
+    // Ban thành viên - chỉ OWNER
+    @PostMapping("/{serverId}/members/{targetUserId}/ban")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> banMember(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.banMember(serverId, targetUserId, userDetails.getId());
+        return ResponseEntity.ok(Map.of("message", "Đã ban thành viên"));
+    }
+
+    // Timeout thành viên - chỉ OWNER
+    @PostMapping("/{serverId}/members/{targetUserId}/timeout")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> timeoutMember(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @RequestParam(defaultValue = "10") int minutes,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.timeoutMember(serverId, targetUserId, userDetails.getId(), minutes);
+        return ResponseEntity.ok(Map.of("message", "Đã timeout thành viên trong " + minutes + " phút"));
+    }
+
+    // Gỡ timeout thành viên - chỉ OWNER
+    @PostMapping("/{serverId}/members/{targetUserId}/remove-timeout")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> removeTimeout(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.removeTimeout(serverId, targetUserId, userDetails.getId());
+        return ResponseEntity.ok(Map.of("message", "Đã gỡ timeout thành viên"));
+    }
 }
+

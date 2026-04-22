@@ -9,9 +9,11 @@ import com.discordclone.backend.dto.response.UserResponse;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.entity.mongo.Conversation;
 import com.discordclone.backend.entity.mongo.DirectMessage;
+import com.discordclone.backend.repository.UserFcmTokenRepository;
 import com.discordclone.backend.repository.UserRepository;
 import com.discordclone.backend.repository.mongo.ConversationRepository;
 import com.discordclone.backend.repository.mongo.DirectMessageRepository;
+import com.discordclone.backend.service.impl.FcmService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
@@ -27,6 +29,8 @@ public class DirectMessageServiceImpl implements DirectMessageService {
     private final DirectMessageRepository directMessageRepository;
     private final ConversationRepository conversationRepository;
     private final UserRepository userRepository;
+    private final UserFcmTokenRepository fcmTokenRepository;
+    private final FcmService fcmService;
 
     @Override
     public DirectMessageResponse sendMessage(Long senderId, DirectMessageRequest request) {
@@ -77,6 +81,12 @@ public class DirectMessageServiceImpl implements DirectMessageService {
             c.setUpdatedAt(new Date());
             conversationRepository.save(c);
         });
+
+        // Lấy thông tin người gửi để gắn vào notification
+        User sender = userRepository.findById(senderId).orElse(null);
+
+        // Gửi FCM notification đến receiver (bất đồng bộ)
+        sendDmFcmNotification(saved, sender);
 
         return mapToResponse(saved, replyTo);
     }
@@ -132,7 +142,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
 
         User user1 = userRepository.findById(conv.getUser1Id()).orElse(null);
         User user2 = userRepository.findById(conv.getUser2Id()).orElse(null);
-        
+
         Long otherUserId = conv.getUser1Id().equals(userId1) ? conv.getUser2Id() : conv.getUser1Id();
         User otherUser = userRepository.findById(otherUserId).orElse(null);
 
@@ -158,7 +168,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
 
         for (Conversation conv : conversations) {
             ConversationResponse resp = getOrCreateConversation(conv.getUser1Id(), conv.getUser2Id());
-            
+
             // Get last message
             directMessageRepository.findTopByConversationIdOrderByCreatedAtDesc(conv.getId())
                     .ifPresent(lastMsg -> resp.setLastMessage(mapToResponse(lastMsg, null)));
@@ -332,4 +342,32 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .reactions(dm.getReactions())
                 .build();
     }
+
+    /**
+     * Gửi FCM notification đến người nhận DM.
+     * Chạy bất đồng bộ — không ảnh hưởng response trả về client.
+     */
+    private void sendDmFcmNotification(DirectMessage saved, User sender) {
+        try {
+            if (saved.getReceiverId() == null) return;
+
+            List<String> tokens = fcmTokenRepository.findFcmTokensByUserId(saved.getReceiverId());
+            if (tokens.isEmpty()) return;
+
+            String senderName = sender != null
+                    ? (sender.getDisplayName() != null ? sender.getDisplayName() : sender.getUserName())
+                    : "Someone";
+
+            fcmService.sendDmNotification(
+                    tokens,
+                    senderName,
+                    String.valueOf(saved.getSenderId()),
+                    saved.getConversationId(),
+                    saved.getContent()
+            );
+        } catch (Exception e) {
+            System.err.println("[FCM] sendDmFcmNotification failed: " + e.getMessage());
+        }
+    }
 }
+

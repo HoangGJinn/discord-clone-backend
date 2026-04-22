@@ -43,3 +43,6 @@ src/main/resources/application.properties
 
 # Các file test
 chat-api-tester.html
+
+# Firebase Service Account
+src/main/resources/firebase-service-account.json

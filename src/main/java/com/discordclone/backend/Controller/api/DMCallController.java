@@ -7,9 +7,11 @@ import com.discordclone.backend.dto.response.UserResponse;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.entity.mongo.Conversation;
 import com.discordclone.backend.entity.mongo.DirectMessage;
+import com.discordclone.backend.repository.UserFcmTokenRepository;
 import com.discordclone.backend.repository.UserRepository;
 import com.discordclone.backend.repository.mongo.ConversationRepository;
 import com.discordclone.backend.repository.mongo.DirectMessageRepository;
+import com.discordclone.backend.service.impl.FcmService;
 import com.discordclone.backend.service.voice.DMCallService;
 import com.discordclone.backend.utils.agora.RtcTokenBuilder2;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +44,8 @@ public class DMCallController {
     private final DirectMessageRepository directMessageRepository;
     private final MongoTemplate mongoTemplate;
     private final SimpMessagingTemplate messagingTemplate;
+    private final UserFcmTokenRepository fcmTokenRepository;
+    private final FcmService fcmService;
 
     private void sendSocketToUser(Long userId, Object payload) {
         userRepository.findById(userId).ifPresent(user -> {
@@ -145,7 +149,25 @@ public class DMCallController {
             
             messagingTemplate.convertAndSend("/topic/dm/call/" + conversationId, wsMessage);
             messagingTemplate.convertAndSend("/topic/user/" + receiverId + "/incoming-call", wsMessage);
-            
+
+            // Gửi FCM call_invite (data-only, priority HIGH) đến thiết bị của receiver
+            try {
+                List<String> calleeTokens = fcmTokenRepository
+                        .findFcmTokensByUserId(Long.parseLong(receiverId));
+                if (!calleeTokens.isEmpty()) {
+                    fcmService.sendCallInviteNotification(
+                            calleeTokens,
+                            callerName,
+                            callerId,
+                            receiverId,
+                            conversationId,
+                            callTypeStr
+                    );
+                }
+            } catch (Exception fcmEx) {
+                System.err.println("[FCM] call_invite failed: " + fcmEx.getMessage());
+            }
+
             return ResponseEntity.ok(callState);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Lỗi khi bắt đầu cuộc gọi: " + e.getMessage());

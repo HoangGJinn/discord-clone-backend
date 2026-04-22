@@ -10,8 +10,11 @@ import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.entity.jpa.ChannelReadState;
 import com.discordclone.backend.repository.ChannelRepository;
 import com.discordclone.backend.repository.ChannelReadStateRepository;
+import com.discordclone.backend.repository.ServerMemberRepository;
+import com.discordclone.backend.repository.UserFcmTokenRepository;
 import com.discordclone.backend.repository.UserRepository;
 import com.discordclone.backend.repository.mongo.ChannelMessageRepository;
+import com.discordclone.backend.service.impl.FcmService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,9 @@ public class MessageServiceImpl implements MessageService {
         private final UserRepository userRepository;
         private final ChannelRepository channelRepository;
         private final ChannelReadStateRepository channelReadStateRepository;
+        private final ServerMemberRepository serverMemberRepository;
+        private final UserFcmTokenRepository fcmTokenRepository;
+        private final FcmService fcmService;
         private final SimpMessagingTemplate messagingTemplate;
 
         @Override
@@ -71,6 +77,10 @@ public class MessageServiceImpl implements MessageService {
                 message.setUpdatedAt(now);
 
                 ChannelMessage saved = messageRepository.save(message);
+
+                // Gửi FCM notification bất đồng bộ đến các thành viên trong server
+                sendServerChannelNotification(saved);
+
                 return mapToResponse(saved, true);
         }
 
@@ -238,5 +248,44 @@ public class MessageServiceImpl implements MessageService {
                                 .updatedAt(msg.getUpdatedAt())
                                 .reactions(msg.getReactions())
                                 .build();
+        }
+
+        /**
+         * Lấy tất cả thành viên trong server chứa channel này,
+         * loại người gửi ra, lấy FCM tokens, rồi bắn notification.
+         */
+        private void sendServerChannelNotification(ChannelMessage saved) {
+                try {
+                        Channel channel = channelRepository.findById(saved.getChannelId())
+                                .orElse(null);
+                        if (channel == null || channel.getServer() == null) return;
+
+                        Long serverId = channel.getServer().getId();
+
+                        // Lấy userId tất cả member trong server, trừ người gửi
+                        List<Long> recipientIds = serverMemberRepository
+                                .findByServerId(serverId)
+                                .stream()
+                                .map(m -> m.getUser().getId())
+                                .filter(uid -> !uid.equals(saved.getSenderId()))
+                                .collect(Collectors.toList());
+
+                        if (recipientIds.isEmpty()) return;
+
+                        List<String> tokens = fcmTokenRepository.findFcmTokensByUserIds(recipientIds);
+                        if (tokens.isEmpty()) return;
+
+                        fcmService.sendServerMessageNotification(
+                                tokens,
+                                saved.getSenderName(),
+                                channel.getName(),
+                                String.valueOf(serverId),
+                                String.valueOf(saved.getChannelId()),
+                                saved.getContent()
+                        );
+                } catch (Exception e) {
+                        // FCM lỗi không được ảnh hưởng flow chính
+                        System.err.println("[FCM] sendServerChannelNotification failed: " + e.getMessage());
+                }
         }
 }

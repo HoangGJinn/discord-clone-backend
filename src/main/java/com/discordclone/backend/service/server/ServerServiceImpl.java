@@ -14,8 +14,13 @@ import com.discordclone.backend.entity.enums.MemberRole;
 import com.discordclone.backend.entity.jpa.*;
 import com.discordclone.backend.exception.ResourceNotFoundException;
 import com.discordclone.backend.repository.*;
+import com.discordclone.backend.repository.mongo.ChannelMessageRepository;
 
 import lombok.RequiredArgsConstructor;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +32,8 @@ public class ServerServiceImpl implements ServerService {
     private final CategoryRepository categoryRepository;
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
+    private final ChannelReadStateRepository channelReadStateRepository;
+    private final ChannelMessageRepository channelMessageRepository;
 
     @Override
     public ServerResponse createServer(CreateServerRequest request, Long userId) {
@@ -82,10 +89,10 @@ public class ServerServiceImpl implements ServerService {
 
     @Override
     @Transactional(readOnly = true)
-    public ServerResponse getServerDetails(Long serverId) {
+    public ServerResponse getServerDetails(Long serverId, Long userId) {
         Server server = serverRepository.findById(serverId)
                 .orElseThrow(() -> new ResourceNotFoundException("Server không tồn tại"));
-        return mapToDetailResponse(server);
+        return mapToDetailResponse(server, userId);
     }
 
     @Override
@@ -129,7 +136,7 @@ public class ServerServiceImpl implements ServerService {
         List<ServerMember> memberships = serverMemberRepository.findByUserId(userId);
         System.out.println("DEBUG: getUserServers - UserId: " + userId + ", Memberships found: " + memberships.size());
         return memberships.stream()
-                .map(member -> mapToBasicResponse(member.getServer()))
+                .map(member -> mapToBasicResponse(member.getServer(), userId))
                 .collect(Collectors.toList());
     }
 
@@ -213,6 +220,14 @@ public class ServerServiceImpl implements ServerService {
     }
 
     private ServerResponse mapToBasicResponse(Server server) {
+        return mapToBasicResponse(server, null);
+    }
+
+    private ServerResponse mapToBasicResponse(Server server, Long viewerUserId) {
+        Long unreadCount = 0L;
+        if (viewerUserId != null) {
+            unreadCount = computeServerUnreadCount(server.getId(), viewerUserId);
+        }
         return ServerResponse.builder()
                 .id(server.getId())
                 .name(server.getName())
@@ -223,17 +238,19 @@ public class ServerServiceImpl implements ServerService {
                 .ownerName(server.getOwner().getDisplayName())
                 .memberCount((int) serverMemberRepository.countByServerId(server.getId()))
                 .channelCount((int) channelRepository.countByServerId(server.getId()))
+                .unreadCount(unreadCount)
                 .createdAt(server.getCreatedAt())
                 .updatedAt(server.getUpdatedAt())
                 .build();
     }
 
-    private ServerResponse mapToDetailResponse(Server server) {
+    private ServerResponse mapToDetailResponse(Server server, Long viewerUserId) {
         // Lấy categories và channels
         List<Category> categories = categoryRepository.findByServerIdOrderByPositionAsc(server.getId());
         List<Channel> standaloneChannels = channelRepository
                 .findByServerIdAndCategoryIsNullOrderByPositionAsc(server.getId());
         List<ServerMember> members = serverMemberRepository.findByServerId(server.getId());
+        Map<Long, Long> unreadByChannelId = buildUnreadMapForServer(server.getId(), viewerUserId);
 
         return ServerResponse.builder()
                 .id(server.getId())
@@ -245,27 +262,28 @@ public class ServerServiceImpl implements ServerService {
                 .ownerName(server.getOwner().getDisplayName())
                 .memberCount(members.size())
                 .channelCount((int) channelRepository.countByServerId(server.getId()))
-                .categories(categories.stream().map(this::mapToCategoryResponse).collect(Collectors.toList()))
-                .channels(standaloneChannels.stream().map(this::mapToChannelResponse).collect(Collectors.toList()))
+                .unreadCount(unreadByChannelId.values().stream().mapToLong(Long::longValue).sum())
+                .categories(categories.stream().map(category -> mapToCategoryResponse(category, unreadByChannelId)).collect(Collectors.toList()))
+                .channels(standaloneChannels.stream().map(channel -> mapToChannelResponse(channel, unreadByChannelId)).collect(Collectors.toList()))
                 .members(members.stream().map(this::mapToMemberResponse).collect(Collectors.toList()))
                 .createdAt(server.getCreatedAt())
                 .updatedAt(server.getUpdatedAt())
                 .build();
     }
 
-    private CategoryResponse mapToCategoryResponse(Category category) {
+    private CategoryResponse mapToCategoryResponse(Category category, Map<Long, Long> unreadByChannelId) {
         List<Channel> channels = channelRepository.findByCategoryIdOrderByPositionAsc(category.getId());
         return CategoryResponse.builder()
                 .id(category.getId())
                 .name(category.getName())
                 .position(category.getPosition())
                 .serverId(category.getServer().getId())
-                .channels(channels.stream().map(this::mapToChannelResponse).collect(Collectors.toList()))
+                .channels(channels.stream().map(channel -> mapToChannelResponse(channel, unreadByChannelId)).collect(Collectors.toList()))
                 .createdAt(category.getCreatedAt())
                 .build();
     }
 
-    private ChannelResponse mapToChannelResponse(Channel channel) {
+    private ChannelResponse mapToChannelResponse(Channel channel, Map<Long, Long> unreadByChannelId) {
         return ChannelResponse.builder()
                 .id(channel.getId())
                 .name(channel.getName())
@@ -274,8 +292,45 @@ public class ServerServiceImpl implements ServerService {
                 .position(channel.getPosition())
                 .serverId(channel.getServer().getId())
                 .categoryId(channel.getCategory() != null ? channel.getCategory().getId() : null)
+                .unreadCount(unreadByChannelId.getOrDefault(channel.getId(), 0L))
                 .createdAt(channel.getCreatedAt())
                 .build();
+    }
+
+    private Long computeServerUnreadCount(Long serverId, Long userId) {
+        return buildUnreadMapForServer(serverId, userId).values().stream().mapToLong(Long::longValue).sum();
+    }
+
+    private Map<Long, Long> buildUnreadMapForServer(Long serverId, Long userId) {
+        Map<Long, Long> unreadByChannelId = new HashMap<>();
+        if (userId == null) {
+            return unreadByChannelId;
+        }
+
+        List<Channel> channels = channelRepository.findByServerIdOrderByPositionAsc(serverId);
+        if (channels.isEmpty()) {
+            return unreadByChannelId;
+        }
+
+        List<Long> channelIds = channels.stream().map(Channel::getId).collect(Collectors.toList());
+        Map<Long, ChannelReadState> readStates = channelReadStateRepository
+                .findByUserIdAndChannelIdIn(userId, channelIds)
+                .stream()
+                .collect(Collectors.toMap(state -> state.getChannel().getId(), state -> state));
+
+        for (Long channelId : channelIds) {
+            ChannelReadState readState = readStates.get(channelId);
+            long unread = readState == null
+                    ? channelMessageRepository.countByChannelIdAndSenderIdNot(channelId, userId)
+                    : channelMessageRepository.countByChannelIdAndSenderIdNotAndCreatedAtAfter(
+                            channelId,
+                            userId,
+                            Date.from(readState.getLastReadAt().atZone(java.time.ZoneId.systemDefault()).toInstant())
+                    );
+            unreadByChannelId.put(channelId, Math.max(unread, 0L));
+        }
+
+        return unreadByChannelId;
     }
 
     private ServerMemberResponse mapToMemberResponse(ServerMember member) {

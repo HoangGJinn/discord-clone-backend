@@ -53,8 +53,10 @@ public class ServerController {
     // Lấy thông tin chi tiết server - chỉ member mới xem được
     @GetMapping("/{serverId}/details")
     @PreAuthorize("@serverSecurity.isMember(#serverId, principal.id)")
-    public ResponseEntity<ServerResponse> getServerDetails(@PathVariable Long serverId) {
-        ServerResponse response = serverService.getServerDetails(serverId);
+    public ResponseEntity<ServerResponse> getServerDetails(
+            @PathVariable Long serverId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        ServerResponse response = serverService.getServerDetails(serverId, userDetails.getId());
         return ResponseEntity.ok(response);
     }
 

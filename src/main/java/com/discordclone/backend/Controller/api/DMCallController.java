@@ -2,6 +2,8 @@ package com.discordclone.backend.Controller.api;
 
 import com.discordclone.backend.dto.voice.DMCallMessage;
 import com.discordclone.backend.dto.voice.DMCallState;
+import com.discordclone.backend.dto.response.DirectMessageResponse;
+import com.discordclone.backend.dto.response.UserResponse;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.entity.mongo.Conversation;
 import com.discordclone.backend.entity.mongo.DirectMessage;
@@ -40,6 +42,14 @@ public class DMCallController {
     private final DirectMessageRepository directMessageRepository;
     private final MongoTemplate mongoTemplate;
     private final SimpMessagingTemplate messagingTemplate;
+
+    private void sendSocketToUser(Long userId, Object payload) {
+        userRepository.findById(userId).ifPresent(user -> {
+            if (user.getUserName() != null) {
+                messagingTemplate.convertAndSendToUser(user.getUserName(), "/queue/dm", payload);
+            }
+        });
+    }
     
     /**
      * Lấy token Agora cho DM call
@@ -203,7 +213,12 @@ public class DMCallController {
         try {
             String conversationId = body.get("conversationId"), userId = body.get("userId");
             DMCallState callState = dmCallService.endCall(conversationId, userId);
-            if (callState == null) return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Không tìm thấy cuộc gọi");
+            if (callState == null) {
+                return ResponseEntity.ok(Map.of(
+                        "conversationId", conversationId,
+                        "status", "ENDED"
+                ));
+            }
             
             DMCallMessage wsMessage = DMCallMessage.builder()
                     .type(DMCallMessage.DMCallMessageType.CALL_ENDED)
@@ -271,16 +286,61 @@ public class DMCallController {
     
     private void saveCallMessage(String conversationId, Long senderId, String content) {
         try {
+            Optional<Conversation> conversationOpt = conversationRepository.findById(conversationId);
+            if (conversationOpt.isEmpty()) {
+                return;
+            }
+
+            Conversation conversation = conversationOpt.get();
+            Long receiverId = Objects.equals(conversation.getUser1Id(), senderId)
+                    ? conversation.getUser2Id()
+                    : conversation.getUser1Id();
+
             DirectMessage message = DirectMessage.builder()
                     .conversationId(conversationId)
                     .senderId(senderId)
+                    .receiverId(receiverId)
                     .content("[Call] " + content)
                     .createdAt(new Date())
                     .updatedAt(new Date())
                     .isRead(false)
                     .build();
-            directMessageRepository.save(message);
-            messagingTemplate.convertAndSend("/topic/dm/messages/" + conversationId, message);
+
+            DirectMessage saved = directMessageRepository.save(message);
+            DirectMessageResponse response = mapToResponse(saved);
+            messagingTemplate.convertAndSend("/topic/dm/" + conversationId, response);
+            sendSocketToUser(receiverId, response);
+            sendSocketToUser(senderId, response);
         } catch (Exception e) { System.err.println("Lỗi lưu call message: " + e.getMessage()); }
+    }
+
+    private DirectMessageResponse mapToResponse(DirectMessage dm) {
+        User sender = null;
+        User receiver = null;
+
+        if (dm.getSenderId() != null) {
+            sender = userRepository.findById(dm.getSenderId()).orElse(null);
+        }
+        if (dm.getReceiverId() != null) {
+            receiver = userRepository.findById(dm.getReceiverId()).orElse(null);
+        }
+        return DirectMessageResponse.builder()
+                .id(dm.getId())
+                .conversationId(dm.getConversationId())
+                .senderId(dm.getSenderId())
+                .receiverId(dm.getReceiverId())
+                .sender(UserResponse.from(sender))
+                .receiver(UserResponse.from(receiver))
+                .content(dm.getContent())
+                .createdAt(dm.getCreatedAt())
+                .updatedAt(dm.getUpdatedAt())
+                .edited(dm.isEdited())
+                .deleted(dm.isDeleted())
+                .isRead(dm.isRead())
+                .attachments(dm.getAttachments())
+                .replyToId(dm.getReplyToId())
+                .replyToMessage(null)
+                .reactions(dm.getReactions())
+                .build();
     }
 }

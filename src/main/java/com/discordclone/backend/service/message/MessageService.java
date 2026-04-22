@@ -17,4 +17,8 @@ public interface MessageService {
     void addReaction(String messageId, Long userId, String emoji);
 
     void removeReaction(String messageId, Long userId, String emoji);
+
+    void markChannelAsRead(Long channelId, Long userId);
+
+    void markChannelAsUnread(Long channelId, Long userId);
 }

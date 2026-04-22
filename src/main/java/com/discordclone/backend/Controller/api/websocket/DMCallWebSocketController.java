@@ -252,7 +252,7 @@ public class DMCallWebSocketController {
      */
     private String generateToken(String channelName, String userId) {
         if (appCertificate == null || appCertificate.isBlank()) {
-            return ""; // Testing mode - không có certificate
+            return "";
         }
         
         try {

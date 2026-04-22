@@ -13,6 +13,7 @@ import com.discordclone.backend.repository.UserRepository;
 import com.discordclone.backend.repository.mongo.ConversationRepository;
 import com.discordclone.backend.repository.mongo.DirectMessageRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -104,19 +105,29 @@ public class DirectMessageServiceImpl implements DirectMessageService {
 
     @Override
     public ConversationResponse getOrCreateConversation(Long userId1, Long userId2) {
-        Optional<Conversation> existing = conversationRepository.findByUsers(userId1, userId2);
+        Long normalizedUser1 = Math.min(userId1, userId2);
+        Long normalizedUser2 = Math.max(userId1, userId2);
+
+        Optional<Conversation> existing = conversationRepository.findByUser1IdAndUser2Id(normalizedUser1, normalizedUser2);
 
         Conversation conv;
         if (existing.isPresent()) {
             conv = existing.get();
         } else {
-            conv = Conversation.builder()
-                    .user1Id(Math.min(userId1, userId2))
-                    .user2Id(Math.max(userId1, userId2))
-                    .createdAt(new Date())
-                    .updatedAt(new Date())
-                    .build();
-            conv = conversationRepository.save(conv);
+            try {
+                conv = Conversation.builder()
+                        .user1Id(normalizedUser1)
+                        .user2Id(normalizedUser2)
+                        .createdAt(new Date())
+                        .updatedAt(new Date())
+                        .user1LastReadAt(new Date())
+                        .user2LastReadAt(new Date())
+                        .build();
+                conv = conversationRepository.save(conv);
+            } catch (DuplicateKeyException ex) {
+                conv = conversationRepository.findByUser1IdAndUser2Id(normalizedUser1, normalizedUser2)
+                        .orElseThrow(() -> ex);
+            }
         }
 
         User user1 = userRepository.findById(conv.getUser1Id()).orElse(null);
@@ -134,6 +145,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .otherUserId(otherUserId)
                 .otherUserName(otherUser != null ? otherUser.getDisplayName() : null)
                 .otherUserAvatar(otherUser != null ? otherUser.getAvatarUrl() : null)
+                .unreadCount(0L)
                 .createdAt(conv.getCreatedAt())
                 .updatedAt(conv.getUpdatedAt())
                 .build();
@@ -151,6 +163,18 @@ public class DirectMessageServiceImpl implements DirectMessageService {
             directMessageRepository.findTopByConversationIdOrderByCreatedAtDesc(conv.getId())
                     .ifPresent(lastMsg -> resp.setLastMessage(mapToResponse(lastMsg, null)));
 
+            Date lastReadAt = Objects.equals(conv.getUser1Id(), userId)
+                    ? conv.getUser1LastReadAt()
+                    : conv.getUser2LastReadAt();
+            long unreadCount = lastReadAt == null
+                    ? directMessageRepository.countByConversationIdAndSenderIdNot(conv.getId(), userId)
+                    : directMessageRepository.countByConversationIdAndSenderIdNotAndCreatedAtAfter(
+                            conv.getId(),
+                            userId,
+                            lastReadAt
+                    );
+            resp.setUnreadCount(unreadCount);
+
             result.add(resp);
         }
 
@@ -162,6 +186,46 @@ public class DirectMessageServiceImpl implements DirectMessageService {
         });
 
         return result;
+    }
+
+    @Override
+    public void markConversationAsRead(String conversationId, Long userId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found"));
+
+        if (!Objects.equals(conversation.getUser1Id(), userId) && !Objects.equals(conversation.getUser2Id(), userId)) {
+            throw new RuntimeException("User not authorized to mark this conversation as read");
+        }
+
+        Date now = new Date();
+        if (Objects.equals(conversation.getUser1Id(), userId)) {
+            conversation.setUser1LastReadAt(now);
+        } else {
+            conversation.setUser2LastReadAt(now);
+        }
+        conversationRepository.save(conversation);
+    }
+
+    @Override
+    public void markConversationAsUnread(String conversationId, Long userId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found"));
+
+        if (!Objects.equals(conversation.getUser1Id(), userId) && !Objects.equals(conversation.getUser2Id(), userId)) {
+            throw new RuntimeException("User not authorized to mark this conversation as unread");
+        }
+
+        Date targetReadAt = directMessageRepository
+                .findTopByConversationIdAndSenderIdNotOrderByCreatedAtDesc(conversationId, userId)
+                .map(message -> new Date(message.getCreatedAt().getTime() - 1))
+                .orElseGet(() -> new Date(System.currentTimeMillis() - 1000));
+
+        if (Objects.equals(conversation.getUser1Id(), userId)) {
+            conversation.setUser1LastReadAt(targetReadAt);
+        } else {
+            conversation.setUser2LastReadAt(targetReadAt);
+        }
+        conversationRepository.save(conversation);
     }
 
     @Override
@@ -239,8 +303,15 @@ public class DirectMessageServiceImpl implements DirectMessageService {
     }
 
     private DirectMessageResponse mapToResponse(DirectMessage dm, DirectMessageResponse replyTo) {
-        User sender = userRepository.findById(dm.getSenderId()).orElse(null);
-        User receiver = userRepository.findById(dm.getReceiverId()).orElse(null);
+        User sender = null;
+        User receiver = null;
+
+        if (dm.getSenderId() != null) {
+            sender = userRepository.findById(dm.getSenderId()).orElse(null);
+        }
+        if (dm.getReceiverId() != null) {
+            receiver = userRepository.findById(dm.getReceiverId()).orElse(null);
+        }
 
         return DirectMessageResponse.builder()
                 .id(dm.getId())

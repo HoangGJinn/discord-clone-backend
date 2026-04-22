@@ -27,6 +27,7 @@ public class ServerResponse {
     // Counts
     private Integer memberCount;
     private Integer channelCount;
+    private Long unreadCount;
 
     // Nested data (optional - có thể null nếu chỉ lấy info cơ bản)
     private List<CategoryResponse> categories;

@@ -113,6 +113,30 @@ public class DirectMessageController {
         return ResponseEntity.ok(conv);
     }
 
+    @Operation(summary = "Mark conversation as read for current user")
+    @PostMapping("/conversation/{conversationId}/read")
+    public ResponseEntity<Void> markConversationAsRead(
+            @PathVariable String conversationId,
+            @AuthenticationPrincipal UserDetailsImpl user) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is null or unauthenticated");
+        }
+        directMessageService.markConversationAsRead(conversationId, user.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Mark conversation as unread for current user")
+    @PostMapping("/conversation/{conversationId}/unread")
+    public ResponseEntity<Void> markConversationAsUnread(
+            @PathVariable String conversationId,
+            @AuthenticationPrincipal UserDetailsImpl user) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User is null or unauthenticated");
+        }
+        directMessageService.markConversationAsUnread(conversationId, user.getId());
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "Edit Direct Message")
     @PutMapping("/{messageId}")
     public ResponseEntity<DirectMessageResponse> editMessage(
@@ -122,7 +146,7 @@ public class DirectMessageController {
         DirectMessageResponse response = directMessageService.editMessage(
                 messageId, userDetails.getId(), request);
 
-        // Notify both users via WebSocket
+        messagingTemplate.convertAndSend("/topic/dm/" + response.getConversationId(), response);
         sendSocketToUser(response.getReceiverId(), response);
         sendSocketToUser(userDetails.getId(), response);
 
@@ -137,7 +161,7 @@ public class DirectMessageController {
         DirectMessageResponse response = directMessageService.deleteMessage(
                 messageId, userDetails.getId());
 
-        // Notify both users via WebSocket
+        messagingTemplate.convertAndSend("/topic/dm/" + response.getConversationId(), response);
         sendSocketToUser(response.getReceiverId(), response);
         sendSocketToUser(userDetails.getId(), response);
 

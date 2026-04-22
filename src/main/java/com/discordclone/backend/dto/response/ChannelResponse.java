@@ -23,5 +23,6 @@ public class ChannelResponse {
     private Long categoryId;
     private Integer bitrate;
     private Integer userLimit;
+    private Long unreadCount;
     private LocalDateTime createdAt;
 }

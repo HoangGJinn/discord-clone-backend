@@ -4,9 +4,12 @@ import com.discordclone.backend.dto.request.ChatMessageRequest;
 import com.discordclone.backend.dto.response.ChatMessageResponse;
 import com.discordclone.backend.dto.response.SocketResponse;
 import com.discordclone.backend.dto.message.MessageAttachment;
+import com.discordclone.backend.entity.jpa.Channel;
 import com.discordclone.backend.entity.mongo.ChannelMessage;
 import com.discordclone.backend.entity.jpa.User;
+import com.discordclone.backend.entity.jpa.ChannelReadState;
 import com.discordclone.backend.repository.ChannelRepository;
+import com.discordclone.backend.repository.ChannelReadStateRepository;
 import com.discordclone.backend.repository.UserRepository;
 import com.discordclone.backend.repository.mongo.ChannelMessageRepository;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +26,7 @@ public class MessageServiceImpl implements MessageService {
         private final ChannelMessageRepository messageRepository;
         private final UserRepository userRepository;
         private final ChannelRepository channelRepository;
+        private final ChannelReadStateRepository channelReadStateRepository;
         private final SimpMessagingTemplate messagingTemplate;
 
         @Override
@@ -164,6 +168,46 @@ public class MessageServiceImpl implements MessageService {
                         "/topic/channel/" + saved.getChannelId(),
                         mapToResponse(saved, true)
                 );
+        }
+
+        @Override
+        public void markChannelAsRead(Long channelId, Long userId) {
+                Channel channel = channelRepository.findById(channelId)
+                        .orElseThrow(() -> new RuntimeException("Channel not found"));
+                User user = userRepository.findById(userId)
+                        .orElseThrow(() -> new RuntimeException("User not found"));
+
+                ChannelReadState readState = channelReadStateRepository
+                        .findByChannelIdAndUserId(channelId, userId)
+                        .orElseGet(() -> ChannelReadState.builder()
+                                .channel(channel)
+                                .user(user)
+                                .build());
+
+                readState.setLastReadAt(java.time.LocalDateTime.now());
+                channelReadStateRepository.save(readState);
+        }
+
+        @Override
+        public void markChannelAsUnread(Long channelId, Long userId) {
+                com.discordclone.backend.entity.jpa.Channel channel = channelRepository.findById(channelId)
+                        .orElseThrow(() -> new RuntimeException("Channel not found"));
+                User user = userRepository.findById(userId)
+                        .orElseThrow(() -> new RuntimeException("User not found"));
+
+                ChannelReadState readState = channelReadStateRepository
+                        .findByChannelIdAndUserId(channelId, userId)
+                        .orElseGet(() -> ChannelReadState.builder()
+                                .channel(channel)
+                                .user(user)
+                                .build());
+
+                Date targetReadAt = messageRepository
+                        .findTopByChannelIdAndSenderIdNotOrderByCreatedAtDesc(channelId, userId)
+                        .map(message -> new Date(message.getCreatedAt().getTime() - 1))
+                        .orElseGet(() -> new Date(System.currentTimeMillis() - 1000));
+                readState.setLastReadAt(targetReadAt.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
+                channelReadStateRepository.save(readState);
         }
 
         private ChatMessageResponse mapToResponse(ChannelMessage msg, boolean includeReply) {

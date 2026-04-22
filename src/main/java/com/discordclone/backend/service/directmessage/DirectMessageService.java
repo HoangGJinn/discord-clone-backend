@@ -20,6 +20,10 @@ public interface DirectMessageService {
 
     List<ConversationResponse> getConversationList(Long userId);
 
+    void markConversationAsRead(String conversationId, Long userId);
+
+    void markConversationAsUnread(String conversationId, Long userId);
+
     DirectMessageResponse editMessage(String messageId, Long userId, EditMessageRequest request);
 
     DirectMessageResponse deleteMessage(String messageId, Long userId);

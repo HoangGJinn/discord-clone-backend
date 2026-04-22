@@ -16,7 +16,7 @@ public interface ServerService {
     ServerResponse getServerById(Long serverId);
 
     // Lấy thông tin server đầy đủ (bao gồm categories, channels, members)
-    ServerResponse getServerDetails(Long serverId);
+    ServerResponse getServerDetails(Long serverId, Long userId);
 
     // Cập nhật server
     ServerResponse updateServer(Long serverId, UpdateServerRequest request, Long userId);

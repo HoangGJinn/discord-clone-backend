@@ -53,5 +53,8 @@ public interface ServerService {
 
     // Gỡ timeout thành viên
     void removeTimeout(Long serverId, Long targetUserId, Long requesterId);
+
+    // Cập nhật vai trò thành viên
+    void updateMemberRole(Long serverId, Long targetUserId, Long requesterId, com.discordclone.backend.entity.enums.MemberRole newRole);
 }
 

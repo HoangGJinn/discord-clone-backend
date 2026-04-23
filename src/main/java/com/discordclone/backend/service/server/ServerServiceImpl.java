@@ -255,11 +255,11 @@ public class ServerServiceImpl implements ServerService {
                 .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
 
         // Chỉ OWNER/ADMIN mới được kick
-        if (requester.getRole() != MemberRole.OWNER) {
-            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể kick thành viên");
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền kick thành viên");
         }
         if (target.getRole() == MemberRole.OWNER) {
-            throw new RuntimeException("Không thể kick chủ sở hữu server");
+            throw new RuntimeException("Không thể tác động tới chủ sở hữu server");
         }
 
         serverMemberRepository.delete(target);
@@ -273,11 +273,11 @@ public class ServerServiceImpl implements ServerService {
         ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
                 .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
 
-        if (requester.getRole() != MemberRole.OWNER) {
-            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể ban thành viên");
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền ban thành viên");
         }
         if (target.getRole() == MemberRole.OWNER) {
-            throw new RuntimeException("Không thể ban chủ sở hữu server");
+            throw new RuntimeException("Không thể tác động tới chủ sở hữu server");
         }
 
         target.setIsBanned(true);
@@ -293,11 +293,11 @@ public class ServerServiceImpl implements ServerService {
         ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
                 .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
 
-        if (requester.getRole() != MemberRole.OWNER) {
-            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể timeout thành viên");
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền timeout thành viên");
         }
         if (target.getRole() == MemberRole.OWNER) {
-            throw new RuntimeException("Không thể timeout chủ sở hữu server");
+            throw new RuntimeException("Không thể tác động tới chủ sở hữu server");
         }
         if (minutes <= 0) {
             throw new RuntimeException("Thời gian timeout phải lớn hơn 0 phút");
@@ -312,14 +312,39 @@ public class ServerServiceImpl implements ServerService {
         ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
                 .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
 
-        if (requester.getRole() != MemberRole.OWNER) {
-            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể gỡ timeout");
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền gỡ timeout");
         }
 
         ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
                 .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
 
         target.setTimeoutUntil(null);
+        serverMemberRepository.save(target);
+    }
+
+    @Override
+    public void updateMemberRole(Long serverId, Long targetUserId, Long requesterId, MemberRole newRole) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        // Chỉ OWNER mới được đổi role (Set Admin/Remove Admin)
+        if (requester.getRole() != MemberRole.OWNER) {
+            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể thay đổi vai trò");
+        }
+
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể thay đổi vai trò của chủ sở hữu");
+        }
+
+        if (newRole == MemberRole.OWNER) {
+            throw new RuntimeException("Để chuyển quyền chủ sở hữu, hãy sử dụng tính năng Transfer Ownership");
+        }
+
+        target.setRole(newRole);
         serverMemberRepository.save(target);
     }
 

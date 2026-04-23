@@ -129,9 +129,9 @@ public class ServerController {
         return ResponseEntity.ok(Map.of("message", "Đã chuyển quyền sở hữu server thành công"));
     }
 
-    // Kick thành viên - chỉ OWNER
+    // Kick thành viên - chỉ OWNER/ADMIN
     @DeleteMapping("/{serverId}/members/{targetUserId}/kick")
-    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
     public ResponseEntity<Map<String, String>> kickMember(
             @PathVariable Long serverId,
             @PathVariable Long targetUserId,
@@ -140,9 +140,9 @@ public class ServerController {
         return ResponseEntity.ok(Map.of("message", "Đã kick thành viên"));
     }
 
-    // Ban thành viên - chỉ OWNER
+    // Ban thành viên - chỉ OWNER/ADMIN
     @PostMapping("/{serverId}/members/{targetUserId}/ban")
-    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
     public ResponseEntity<Map<String, String>> banMember(
             @PathVariable Long serverId,
             @PathVariable Long targetUserId,
@@ -151,9 +151,9 @@ public class ServerController {
         return ResponseEntity.ok(Map.of("message", "Đã ban thành viên"));
     }
 
-    // Timeout thành viên - chỉ OWNER
+    // Timeout thành viên - chỉ OWNER/ADMIN
     @PostMapping("/{serverId}/members/{targetUserId}/timeout")
-    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
     public ResponseEntity<Map<String, String>> timeoutMember(
             @PathVariable Long serverId,
             @PathVariable Long targetUserId,
@@ -163,15 +163,27 @@ public class ServerController {
         return ResponseEntity.ok(Map.of("message", "Đã timeout thành viên trong " + minutes + " phút"));
     }
 
-    // Gỡ timeout thành viên - chỉ OWNER
+    // Gỡ timeout thành viên - chỉ OWNER/ADMIN
     @PostMapping("/{serverId}/members/{targetUserId}/remove-timeout")
-    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
     public ResponseEntity<Map<String, String>> removeTimeout(
             @PathVariable Long serverId,
             @PathVariable Long targetUserId,
             @AuthenticationPrincipal UserDetailsImpl userDetails) {
         serverService.removeTimeout(serverId, targetUserId, userDetails.getId());
         return ResponseEntity.ok(Map.of("message", "Đã gỡ timeout thành viên"));
+    }
+
+    // Cập nhật vai trò thành viên - chỉ OWNER
+    @PutMapping("/{serverId}/members/{targetUserId}/role")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> updateMemberRole(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @RequestParam com.discordclone.backend.entity.enums.MemberRole role,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.updateMemberRole(serverId, targetUserId, userDetails.getId(), role);
+        return ResponseEntity.ok(Map.of("message", "Đã cập nhật vai trò thành viên thành công"));
     }
 }
 

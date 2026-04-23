@@ -22,4 +22,6 @@ public interface UserService {
     void changePassword(String userName, String currentPassword, String newPassword, String confirmNewPassword);
 
     Optional<User> findById(Long id);
+
+    User loginWithGoogle(String idToken);
 }

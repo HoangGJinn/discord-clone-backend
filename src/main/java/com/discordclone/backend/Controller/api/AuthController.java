@@ -1,6 +1,7 @@
 package com.discordclone.backend.Controller.api;
 
 import com.discordclone.backend.dto.request.ForgotPasswordRequest;
+import com.discordclone.backend.dto.request.GoogleLoginRequest;
 import com.discordclone.backend.dto.request.LoginRequest;
 import com.discordclone.backend.dto.request.RegisterRequest;
 import com.discordclone.backend.dto.request.ResendOtpRequest;
@@ -177,6 +178,33 @@ public class AuthController {
             otpService.markOtpAsUsed(otpEntity);
             return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
         } catch (Exception ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
+    }
+
+    @PostMapping("/google-login")
+    public ResponseEntity<?> googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+        try {
+            User user = userService.loginWithGoogle(request.getIdToken());
+            
+            List<String> roles = user.getRoles().stream()
+                    .map(role -> role.getName().name())
+                    .toList();
+
+            // Tự động tạo token JWT cho user mới/cũ vừa login bằng Google
+            String jwt = jwtUtils.generateJwtTokenFromUsername(user.getUserName(), roles);
+
+            return ResponseEntity.ok(LoginResponse.builder()
+                    .message("Login successful with Google")
+                    .token(jwt)
+                    .userId(user.getId())
+                    .userName(user.getUserName())
+                    .email(user.getEmail())
+                    .displayName(user.getDisplayName())
+                    .roles(roles)
+                    .build());
+        } catch (Exception ex) {
+            log.error("Google login failed: {}", ex.getMessage());
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
     }

@@ -23,9 +23,30 @@ public class MessageController {
     // Lấy lịch sử tin nhắn của channel - chỉ member mới xem được
     @GetMapping("/channels/{channelId}/messages")
     @PreAuthorize("@serverSecurity.isMemberOfChannel(#channelId, principal.id)")
-    public ResponseEntity<List<ChatMessageResponse>> getMessagesByChannel(@PathVariable Long channelId) {
+    public ResponseEntity<List<ChatMessageResponse>> getMessagesByChannel(
+            @PathVariable Long channelId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
         List<ChatMessageResponse> messages = messageService.getMessagesByChannel(channelId);
+        messageService.markChannelAsRead(channelId, userDetails.getId());
         return ResponseEntity.ok(messages);
+    }
+
+    @PostMapping("/channels/{channelId}/read")
+    @PreAuthorize("@serverSecurity.isMemberOfChannel(#channelId, principal.id)")
+    public ResponseEntity<Void> markChannelAsRead(
+            @PathVariable Long channelId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        messageService.markChannelAsRead(channelId, userDetails.getId());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/channels/{channelId}/unread")
+    @PreAuthorize("@serverSecurity.isMemberOfChannel(#channelId, principal.id)")
+    public ResponseEntity<Void> markChannelAsUnread(
+            @PathVariable Long channelId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        messageService.markChannelAsUnread(channelId, userDetails.getId());
+        return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/messages/{messageId}")

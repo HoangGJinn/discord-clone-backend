@@ -18,4 +18,7 @@ public class UpdateProfileRequest {
     private String pronouns;
     private String country;
     private LocalDate birthDate;
+    private String avatarEffectId;
+    private String bannerEffectId;
+    private String cardEffectId;
 }

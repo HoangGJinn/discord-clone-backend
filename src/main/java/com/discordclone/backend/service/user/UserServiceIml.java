@@ -14,6 +14,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
+import java.time.LocalDateTime;
+import java.util.Collections;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import java.util.Optional;
 import java.util.Set;
 
@@ -25,6 +31,9 @@ public class UserServiceIml implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
     private final OtpService otpService;
+
+    @org.springframework.beans.factory.annotation.Value("${app.google-client-id}")
+    private String googleClientId;
 
     @Override
     public Optional<User> findByUserName(String userName) {
@@ -39,7 +48,28 @@ public class UserServiceIml implements UserService {
     @Override
     public void updatePassword(User user, String newPassword) {
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setPasswordChangedAt(LocalDateTime.now());
         userRepository.save(user);
+    }
+
+    @Override
+    public void changePassword(String userName, String currentPassword, String newPassword, String confirmNewPassword) {
+        User user = findByUserName(userName)
+                .orElseThrow(() -> new EntityNotFoundException("User not found: " + userName));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        if (newPassword.equals(currentPassword)) {
+            throw new IllegalArgumentException("New password must be different from current password");
+        }
+
+        if (!newPassword.equals(confirmNewPassword)) {
+            throw new IllegalArgumentException("Confirm password does not match new password");
+        }
+
+        updatePassword(user, newPassword);
     }
 
     @Override
@@ -107,6 +137,12 @@ public class UserServiceIml implements UserService {
             user.setCountry(request.getCountry());
         if (request.getBirthDate() != null)
             user.setBirthDate(request.getBirthDate());
+        if (request.getAvatarEffectId() != null)
+            user.setAvatarEffectId(request.getAvatarEffectId().isEmpty() ? null : request.getAvatarEffectId());
+        if (request.getBannerEffectId() != null)
+            user.setBannerEffectId(request.getBannerEffectId().isEmpty() ? null : request.getBannerEffectId());
+        if (request.getCardEffectId() != null)
+            user.setCardEffectId(request.getCardEffectId().isEmpty() ? null : request.getCardEffectId());
 
         return userRepository.save(user);
     }
@@ -114,5 +150,64 @@ public class UserServiceIml implements UserService {
     @Override
     public Optional<User> findById(Long id) {
         return userRepository.findById(id);
+    }
+
+    @Override
+    public User loginWithGoogle(String idToken) {
+        try {
+            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
+                    .setAudience(Collections.singletonList(googleClientId))
+                    .build();
+
+            GoogleIdToken idTokenObj = verifier.verify(idToken);
+            if (idTokenObj != null) {
+                GoogleIdToken.Payload payload = idTokenObj.getPayload();
+
+                String email = payload.getEmail();
+                String name = (String) payload.get("name");
+                String pictureUrl = (String) payload.get("picture");
+
+                Optional<User> existingUser = userRepository.findByEmail(email);
+                if (existingUser.isPresent()) {
+                    User user = existingUser.get();
+                    user.setIsEmailVerified(true);
+                    user.setIsActive(true);
+                    if (user.getAvatarUrl() == null || user.getAvatarUrl().isEmpty()) {
+                        user.setAvatarUrl(pictureUrl);
+                    }
+                    return userRepository.save(user);
+                } else {
+                    // Create new user
+                    Role defaultRole = roleRepository.findByName(ERole.USER_DEFAULT)
+                            .orElseThrow(() -> new EntityNotFoundException("Role user not found"));
+
+                    Set<Role> roles = new HashSet<>();
+                    roles.add(defaultRole);
+
+                    // Generate a unique username from email
+                    String username = email.split("@")[0];
+                    if (userRepository.existsByUserName(username)) {
+                        username = username + "_" + (System.currentTimeMillis() % 1000);
+                    }
+
+                    User user = User.builder()
+                            .userName(username)
+                            .email(email)
+                            .password(null) // No password for Google users
+                            .displayName(name)
+                            .avatarUrl(pictureUrl)
+                            .isActive(true)
+                            .isEmailVerified(true)
+                            .roles(roles)
+                            .build();
+
+                    return userRepository.save(user);
+                }
+            } else {
+                throw new RuntimeException("Invalid ID Token");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Error verifying Google token: " + e.getMessage());
+        }
     }
 }

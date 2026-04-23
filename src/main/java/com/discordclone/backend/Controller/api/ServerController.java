@@ -53,8 +53,10 @@ public class ServerController {
     // Lấy thông tin chi tiết server - chỉ member mới xem được
     @GetMapping("/{serverId}/details")
     @PreAuthorize("@serverSecurity.isMember(#serverId, principal.id)")
-    public ResponseEntity<ServerResponse> getServerDetails(@PathVariable Long serverId) {
-        ServerResponse response = serverService.getServerDetails(serverId);
+    public ResponseEntity<ServerResponse> getServerDetails(
+            @PathVariable Long serverId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        ServerResponse response = serverService.getServerDetails(serverId, userDetails.getId());
         return ResponseEntity.ok(response);
     }
 
@@ -115,4 +117,73 @@ public class ServerController {
         List<ServerMemberResponse> members = serverService.getServerMembers(serverId);
         return ResponseEntity.ok(members);
     }
+
+    // Chuyển quyền sở hữu server - chỉ OWNER mới được làm
+    @PostMapping("/{serverId}/transfer-ownership")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> transferOwnership(
+            @PathVariable Long serverId,
+            @RequestParam Long newOwnerId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.transferOwnership(serverId, userDetails.getId(), newOwnerId);
+        return ResponseEntity.ok(Map.of("message", "Đã chuyển quyền sở hữu server thành công"));
+    }
+
+    // Kick thành viên - chỉ OWNER/ADMIN
+    @DeleteMapping("/{serverId}/members/{targetUserId}/kick")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> kickMember(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.kickMember(serverId, targetUserId, userDetails.getId());
+        return ResponseEntity.ok(Map.of("message", "Đã kick thành viên"));
+    }
+
+    // Ban thành viên - chỉ OWNER/ADMIN
+    @PostMapping("/{serverId}/members/{targetUserId}/ban")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> banMember(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.banMember(serverId, targetUserId, userDetails.getId());
+        return ResponseEntity.ok(Map.of("message", "Đã ban thành viên"));
+    }
+
+    // Timeout thành viên - chỉ OWNER/ADMIN
+    @PostMapping("/{serverId}/members/{targetUserId}/timeout")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> timeoutMember(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @RequestParam(defaultValue = "10") int minutes,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.timeoutMember(serverId, targetUserId, userDetails.getId(), minutes);
+        return ResponseEntity.ok(Map.of("message", "Đã timeout thành viên trong " + minutes + " phút"));
+    }
+
+    // Gỡ timeout thành viên - chỉ OWNER/ADMIN
+    @PostMapping("/{serverId}/members/{targetUserId}/remove-timeout")
+    @PreAuthorize("@serverSecurity.isAdmin(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> removeTimeout(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.removeTimeout(serverId, targetUserId, userDetails.getId());
+        return ResponseEntity.ok(Map.of("message", "Đã gỡ timeout thành viên"));
+    }
+
+    // Cập nhật vai trò thành viên - chỉ OWNER
+    @PutMapping("/{serverId}/members/{targetUserId}/role")
+    @PreAuthorize("@serverSecurity.isOwner(#serverId, principal.id)")
+    public ResponseEntity<Map<String, String>> updateMemberRole(
+            @PathVariable Long serverId,
+            @PathVariable Long targetUserId,
+            @RequestParam com.discordclone.backend.entity.enums.MemberRole role,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        serverService.updateMemberRole(serverId, targetUserId, userDetails.getId(), role);
+        return ResponseEntity.ok(Map.of("message", "Đã cập nhật vai trò thành viên thành công"));
+    }
 }
+

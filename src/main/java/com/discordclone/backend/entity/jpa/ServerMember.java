@@ -43,6 +43,13 @@ public class ServerMember {
     @Column(name = "joined_at")
     private LocalDateTime joinedAt;
 
+    @Column(name = "is_banned", nullable = false)
+    @Builder.Default
+    private Boolean isBanned = false;
+
+    @Column(name = "timeout_until")
+    private LocalDateTime timeoutUntil;
+
     @PrePersist
     protected void onCreate() {
         joinedAt = LocalDateTime.now();

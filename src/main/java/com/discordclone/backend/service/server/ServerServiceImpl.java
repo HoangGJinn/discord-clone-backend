@@ -14,8 +14,13 @@ import com.discordclone.backend.entity.enums.MemberRole;
 import com.discordclone.backend.entity.jpa.*;
 import com.discordclone.backend.exception.ResourceNotFoundException;
 import com.discordclone.backend.repository.*;
+import com.discordclone.backend.repository.mongo.ChannelMessageRepository;
 
 import lombok.RequiredArgsConstructor;
+
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -27,6 +32,8 @@ public class ServerServiceImpl implements ServerService {
     private final CategoryRepository categoryRepository;
     private final ChannelRepository channelRepository;
     private final UserRepository userRepository;
+    private final ChannelReadStateRepository channelReadStateRepository;
+    private final ChannelMessageRepository channelMessageRepository;
 
     @Override
     public ServerResponse createServer(CreateServerRequest request, Long userId) {
@@ -82,10 +89,10 @@ public class ServerServiceImpl implements ServerService {
 
     @Override
     @Transactional(readOnly = true)
-    public ServerResponse getServerDetails(Long serverId) {
+    public ServerResponse getServerDetails(Long serverId, Long userId) {
         Server server = serverRepository.findById(serverId)
                 .orElseThrow(() -> new ResourceNotFoundException("Server không tồn tại"));
-        return mapToDetailResponse(server);
+        return mapToDetailResponse(server, userId);
     }
 
     @Override
@@ -129,7 +136,7 @@ public class ServerServiceImpl implements ServerService {
         List<ServerMember> memberships = serverMemberRepository.findByUserId(userId);
         System.out.println("DEBUG: getUserServers - UserId: " + userId + ", Memberships found: " + memberships.size());
         return memberships.stream()
-                .map(member -> mapToBasicResponse(member.getServer()))
+                .map(member -> mapToBasicResponse(member.getServer(), userId))
                 .collect(Collectors.toList());
     }
 
@@ -144,6 +151,14 @@ public class ServerServiceImpl implements ServerService {
         // Kiểm tra đã là thành viên chưa
         if (serverMemberRepository.existsByServerIdAndUserId(server.getId(), userId)) {
             throw new RuntimeException("Bạn đã là thành viên của server này");
+        }
+
+        // Kiểm tra bị ban không
+        List<ServerMember> bannedCheck = serverMemberRepository.findByServerId(server.getId());
+        boolean isBanned = bannedCheck.stream()
+                .anyMatch(m -> m.getUser().getId().equals(userId) && Boolean.TRUE.equals(m.getIsBanned()));
+        if (isBanned) {
+            throw new RuntimeException("Bạn đã bị cấm khỏi server này");
         }
 
         // Thêm thành viên mới
@@ -164,10 +179,48 @@ public class ServerServiceImpl implements ServerService {
 
         // Owner không thể rời server
         if (server.getOwner().getId().equals(userId)) {
-            throw new RuntimeException("Chủ sở hữu không thể rời server. Hãy chuyển quyền sở hữu hoặc xóa server.");
+            throw new RuntimeException("Bạn không thể rời server khi đang là chủ sở hữu. Hãy cấp quyền owner cho một thành viên khác trước khi rời server.");
         }
 
         serverMemberRepository.deleteByServerIdAndUserId(serverId, userId);
+    }
+
+    @Override
+    public void transferOwnership(Long serverId, Long currentOwnerId, Long newOwnerId) {
+        Server server = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResourceNotFoundException("Server không tồn tại"));
+
+        // Kiểm tra quyền (phải là owner hiện tại)
+        if (!server.getOwner().getId().equals(currentOwnerId)) {
+            throw new RuntimeException("Chỉ chủ sở hữu hiện tại mới có thể chuyển quyền sở hữu");
+        }
+
+        if (currentOwnerId.equals(newOwnerId)) {
+            throw new RuntimeException("Bạn đã là chủ sở hữu của server này rồi");
+        }
+
+        User newOwner = userRepository.findById(newOwnerId)
+                .orElseThrow(() -> new ResourceNotFoundException("Thành viên mới không tồn tại"));
+
+        // Kiểm tra newOwner có phải là member của server không
+        ServerMember newOwnerMember = serverMemberRepository.findByServerIdAndUserId(serverId, newOwnerId)
+                .orElseThrow(() -> new RuntimeException("Người dùng được chọn không phải là thành viên của server này"));
+
+        // Kiểm tra currentOwnerMember
+        ServerMember currentOwnerMember = serverMemberRepository.findByServerIdAndUserId(serverId, currentOwnerId)
+                .orElseThrow(() -> new RuntimeException("Lỗi dữ liệu: Không tìm thấy membership của owner hiện tại"));
+
+        // 1. Cập nhật Server entity
+        server.setOwner(newOwner);
+        serverRepository.save(server);
+
+        // 2. Cập nhật role của owner cũ (thành ADMIN hoặc MEMBER - ở đây chọn ADMIN cho tiện quản lý tiếp)
+        currentOwnerMember.setRole(MemberRole.ADMIN);
+        serverMemberRepository.save(currentOwnerMember);
+
+        // 3. Cập nhật role của owner mới
+        newOwnerMember.setRole(MemberRole.OWNER);
+        serverMemberRepository.save(newOwnerMember);
     }
 
     @Override
@@ -193,6 +246,108 @@ public class ServerServiceImpl implements ServerService {
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public void kickMember(Long serverId, Long targetUserId, Long requesterId) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        // Chỉ OWNER/ADMIN mới được kick
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền kick thành viên");
+        }
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể tác động tới chủ sở hữu server");
+        }
+
+        serverMemberRepository.delete(target);
+    }
+
+    @Override
+    public void banMember(Long serverId, Long targetUserId, Long requesterId) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền ban thành viên");
+        }
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể tác động tới chủ sở hữu server");
+        }
+
+        target.setIsBanned(true);
+        serverMemberRepository.save(target);
+        serverMemberRepository.delete(target);
+    }
+
+    @Override
+    public void timeoutMember(Long serverId, Long targetUserId, Long requesterId, int minutes) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền timeout thành viên");
+        }
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể tác động tới chủ sở hữu server");
+        }
+        if (minutes <= 0) {
+            throw new RuntimeException("Thời gian timeout phải lớn hơn 0 phút");
+        }
+
+        target.setTimeoutUntil(java.time.LocalDateTime.now().plusMinutes(minutes));
+        serverMemberRepository.save(target);
+    }
+
+    @Override
+    public void removeTimeout(Long serverId, Long targetUserId, Long requesterId) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        if (requester.getRole() != MemberRole.OWNER && requester.getRole() != MemberRole.ADMIN) {
+            throw new RuntimeException("Bạn không có quyền gỡ timeout");
+        }
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        target.setTimeoutUntil(null);
+        serverMemberRepository.save(target);
+    }
+
+    @Override
+    public void updateMemberRole(Long serverId, Long targetUserId, Long requesterId, MemberRole newRole) {
+        ServerMember requester = serverMemberRepository.findByServerIdAndUserId(serverId, requesterId)
+                .orElseThrow(() -> new RuntimeException("Bạn không phải thành viên của server này"));
+
+        ServerMember target = serverMemberRepository.findByServerIdAndUserId(serverId, targetUserId)
+                .orElseThrow(() -> new RuntimeException("Thành viên không tồn tại trong server này"));
+
+        // Chỉ OWNER mới được đổi role (Set Admin/Remove Admin)
+        if (requester.getRole() != MemberRole.OWNER) {
+            throw new RuntimeException("Chỉ chủ sở hữu server mới có thể thay đổi vai trò");
+        }
+
+        if (target.getRole() == MemberRole.OWNER) {
+            throw new RuntimeException("Không thể thay đổi vai trò của chủ sở hữu");
+        }
+
+        if (newRole == MemberRole.OWNER) {
+            throw new RuntimeException("Để chuyển quyền chủ sở hữu, hãy sử dụng tính năng Transfer Ownership");
+        }
+
+        target.setRole(newRole);
+        serverMemberRepository.save(target);
+    }
+
     // ============== Helper Methods ==============
 
     private String generateInviteCode() {
@@ -213,6 +368,14 @@ public class ServerServiceImpl implements ServerService {
     }
 
     private ServerResponse mapToBasicResponse(Server server) {
+        return mapToBasicResponse(server, null);
+    }
+
+    private ServerResponse mapToBasicResponse(Server server, Long viewerUserId) {
+        Long unreadCount = 0L;
+        if (viewerUserId != null) {
+            unreadCount = computeServerUnreadCount(server.getId(), viewerUserId);
+        }
         return ServerResponse.builder()
                 .id(server.getId())
                 .name(server.getName())
@@ -223,17 +386,19 @@ public class ServerServiceImpl implements ServerService {
                 .ownerName(server.getOwner().getDisplayName())
                 .memberCount((int) serverMemberRepository.countByServerId(server.getId()))
                 .channelCount((int) channelRepository.countByServerId(server.getId()))
+                .unreadCount(unreadCount)
                 .createdAt(server.getCreatedAt())
                 .updatedAt(server.getUpdatedAt())
                 .build();
     }
 
-    private ServerResponse mapToDetailResponse(Server server) {
+    private ServerResponse mapToDetailResponse(Server server, Long viewerUserId) {
         // Lấy categories và channels
         List<Category> categories = categoryRepository.findByServerIdOrderByPositionAsc(server.getId());
         List<Channel> standaloneChannels = channelRepository
                 .findByServerIdAndCategoryIsNullOrderByPositionAsc(server.getId());
         List<ServerMember> members = serverMemberRepository.findByServerId(server.getId());
+        Map<Long, Long> unreadByChannelId = buildUnreadMapForServer(server.getId(), viewerUserId);
 
         return ServerResponse.builder()
                 .id(server.getId())
@@ -245,27 +410,28 @@ public class ServerServiceImpl implements ServerService {
                 .ownerName(server.getOwner().getDisplayName())
                 .memberCount(members.size())
                 .channelCount((int) channelRepository.countByServerId(server.getId()))
-                .categories(categories.stream().map(this::mapToCategoryResponse).collect(Collectors.toList()))
-                .channels(standaloneChannels.stream().map(this::mapToChannelResponse).collect(Collectors.toList()))
+                .unreadCount(unreadByChannelId.values().stream().mapToLong(Long::longValue).sum())
+                .categories(categories.stream().map(category -> mapToCategoryResponse(category, unreadByChannelId)).collect(Collectors.toList()))
+                .channels(standaloneChannels.stream().map(channel -> mapToChannelResponse(channel, unreadByChannelId)).collect(Collectors.toList()))
                 .members(members.stream().map(this::mapToMemberResponse).collect(Collectors.toList()))
                 .createdAt(server.getCreatedAt())
                 .updatedAt(server.getUpdatedAt())
                 .build();
     }
 
-    private CategoryResponse mapToCategoryResponse(Category category) {
+    private CategoryResponse mapToCategoryResponse(Category category, Map<Long, Long> unreadByChannelId) {
         List<Channel> channels = channelRepository.findByCategoryIdOrderByPositionAsc(category.getId());
         return CategoryResponse.builder()
                 .id(category.getId())
                 .name(category.getName())
                 .position(category.getPosition())
                 .serverId(category.getServer().getId())
-                .channels(channels.stream().map(this::mapToChannelResponse).collect(Collectors.toList()))
+                .channels(channels.stream().map(channel -> mapToChannelResponse(channel, unreadByChannelId)).collect(Collectors.toList()))
                 .createdAt(category.getCreatedAt())
                 .build();
     }
 
-    private ChannelResponse mapToChannelResponse(Channel channel) {
+    private ChannelResponse mapToChannelResponse(Channel channel, Map<Long, Long> unreadByChannelId) {
         return ChannelResponse.builder()
                 .id(channel.getId())
                 .name(channel.getName())
@@ -274,8 +440,45 @@ public class ServerServiceImpl implements ServerService {
                 .position(channel.getPosition())
                 .serverId(channel.getServer().getId())
                 .categoryId(channel.getCategory() != null ? channel.getCategory().getId() : null)
+                .unreadCount(unreadByChannelId.getOrDefault(channel.getId(), 0L))
                 .createdAt(channel.getCreatedAt())
                 .build();
+    }
+
+    private Long computeServerUnreadCount(Long serverId, Long userId) {
+        return buildUnreadMapForServer(serverId, userId).values().stream().mapToLong(Long::longValue).sum();
+    }
+
+    private Map<Long, Long> buildUnreadMapForServer(Long serverId, Long userId) {
+        Map<Long, Long> unreadByChannelId = new HashMap<>();
+        if (userId == null) {
+            return unreadByChannelId;
+        }
+
+        List<Channel> channels = channelRepository.findByServerIdOrderByPositionAsc(serverId);
+        if (channels.isEmpty()) {
+            return unreadByChannelId;
+        }
+
+        List<Long> channelIds = channels.stream().map(Channel::getId).collect(Collectors.toList());
+        Map<Long, ChannelReadState> readStates = channelReadStateRepository
+                .findByUserIdAndChannelIdIn(userId, channelIds)
+                .stream()
+                .collect(Collectors.toMap(state -> state.getChannel().getId(), state -> state));
+
+        for (Long channelId : channelIds) {
+            ChannelReadState readState = readStates.get(channelId);
+            long unread = readState == null
+                    ? channelMessageRepository.countByChannelIdAndSenderIdNot(channelId, userId)
+                    : channelMessageRepository.countByChannelIdAndSenderIdNotAndCreatedAtAfter(
+                            channelId,
+                            userId,
+                            Date.from(readState.getLastReadAt().atZone(java.time.ZoneId.systemDefault()).toInstant())
+                    );
+            unreadByChannelId.put(channelId, Math.max(unread, 0L));
+        }
+
+        return unreadByChannelId;
     }
 
     private ServerMemberResponse mapToMemberResponse(ServerMember member) {
@@ -289,6 +492,11 @@ public class ServerServiceImpl implements ServerService {
                 .status(member.getUser().getStatus())
                 .role(member.getRole())
                 .joinedAt(member.getJoinedAt())
+                .avatarEffectId(member.getUser().getAvatarEffectId())
+                .bannerEffectId(member.getUser().getBannerEffectId())
+                .cardEffectId(member.getUser().getCardEffectId())
+                .isBanned(member.getIsBanned())
+                .timeoutUntil(member.getTimeoutUntil())
                 .build();
     }
 }

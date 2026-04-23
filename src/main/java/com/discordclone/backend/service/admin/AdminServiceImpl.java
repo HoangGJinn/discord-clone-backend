@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -45,6 +46,19 @@ public class AdminServiceImpl implements AdminService {
         Long totalReports = reportedMessageRepository.count();
         Long pendingReports = reportedMessageRepository.countByStatus(ReportedMessage.ReportStatus.PENDING);
 
+        // Calculate growth (last 30 days vs previous 30 days)
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime thirtyDaysAgo = now.minusDays(30);
+        LocalDateTime sixtyDaysAgo = now.minusDays(60);
+
+        Long usersLast30 = userRepository.countByCreatedAtBetween(thirtyDaysAgo, now);
+        Long usersPrev30 = userRepository.countByCreatedAtBetween(sixtyDaysAgo, thirtyDaysAgo);
+        Double userGrowth = calculateGrowth(usersLast30, usersPrev30);
+
+        Long serversLast30 = serverRepository.countByCreatedAtBetween(thirtyDaysAgo, now);
+        Long serversPrev30 = serverRepository.countByCreatedAtBetween(sixtyDaysAgo, thirtyDaysAgo);
+        Double serverGrowth = calculateGrowth(serversLast30, serversPrev30);
+
         return AdminStatsOverview.builder()
                 .totalUsers(totalUsers)
                 .activeUsers(activeUsers)
@@ -55,7 +69,18 @@ public class AdminServiceImpl implements AdminService {
                 .newUsersToday(newUsersToday)
                 .totalReports(totalReports)
                 .pendingReports(pendingReports)
+                .userGrowth(userGrowth)
+                .serverGrowth(serverGrowth)
+                .messageGrowth(0.0)
+                .revenueGrowth(0.0)
                 .build();
+    }
+
+    private Double calculateGrowth(Long current, Long previous) {
+        if (previous == null || previous == 0) {
+            return current > 0 ? 100.0 : 0.0;
+        }
+        return ((double) (current - previous) / previous) * 100.0;
     }
 
     @Override
@@ -93,6 +118,7 @@ public class AdminServiceImpl implements AdminService {
                         .memberCount(server.getMembers().size())
                         .channelCount(server.getChannels() != null ? server.getChannels().size() : 0)
                         .createdAt(server.getCreatedAt())
+                        .isBanned(server.getIsBanned() != null ? server.getIsBanned() : false)
                         .build())
                 .collect(java.util.stream.Collectors.toList());
     }
@@ -126,54 +152,66 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     @Transactional
-    public void disableUser(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        user.setIsActive(false);
-        userRepository.save(user);
-    }
-
-    @Override
-    @Transactional
-    public void enableUser(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        user.setIsActive(true);
-        userRepository.save(user);
-    }
-
-    @Override
-    @Transactional
-    public void banUser(Long userId, String reason) {
+    public void disableUser(Long userId, Long adminId, String ipAddress) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setIsActive(false);
         userRepository.save(user);
 
-        // TODO: Create warning record
+        logAudit(adminId, "DISABLE_USER", "USER", userId, "{\"userName\": \"" + user.getUserName() + "\"}", ipAddress);
     }
 
     @Override
     @Transactional
-    public void unbanUser(Long userId) {
+    public void enableUser(Long userId, Long adminId, String ipAddress) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setIsActive(true);
         userRepository.save(user);
+
+        logAudit(adminId, "ENABLE_USER", "USER", userId, "{\"userName\": \"" + user.getUserName() + "\"}", ipAddress);
     }
 
     @Override
     @Transactional
-    public void bulkDisableUsers(List<Long> userIds, String reason) {
-        userRepository.findAllById(userIds).forEach(user -> user.setIsActive(false));
-        userRepository.saveAll(userRepository.findAllById(userIds));
+    public void banUser(Long userId, String reason, Long adminId, String ipAddress) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setIsActive(false);
+        userRepository.save(user);
+
+        logAudit(adminId, "BAN_USER", "USER", userId, "{\"reason\": \"" + reason + "\", \"userName\": \"" + user.getUserName() + "\"}", ipAddress);
     }
 
     @Override
     @Transactional
-    public void bulkBanUsers(List<Long> userIds, String reason) {
-        userRepository.findAllById(userIds).forEach(user -> user.setIsActive(false));
-        userRepository.saveAll(userRepository.findAllById(userIds));
+    public void unbanUser(Long userId, Long adminId, String ipAddress) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setIsActive(true);
+        userRepository.save(user);
+
+        logAudit(adminId, "UNBAN_USER", "USER", userId, "{\"userName\": \"" + user.getUserName() + "\"}", ipAddress);
+    }
+
+    @Override
+    @Transactional
+    public void bulkDisableUsers(List<Long> userIds, String reason, Long adminId, String ipAddress) {
+        List<User> users = userRepository.findAllById(userIds);
+        users.forEach(user -> user.setIsActive(false));
+        userRepository.saveAll(users);
+
+        logAudit(adminId, "BULK_DISABLE_USERS", "USER", null, "{\"userIds\": " + userIds + ", \"reason\": \"" + reason + "\"}", ipAddress);
+    }
+
+    @Override
+    @Transactional
+    public void bulkBanUsers(List<Long> userIds, String reason, Long adminId, String ipAddress) {
+        List<User> users = userRepository.findAllById(userIds);
+        users.forEach(user -> user.setIsActive(false));
+        userRepository.saveAll(users);
+
+        logAudit(adminId, "BULK_BAN_USERS", "USER", null, "{\"userIds\": " + userIds + ", \"reason\": \"" + reason + "\"}", ipAddress);
     }
 
     // ===== SERVER MANAGEMENT =====
@@ -192,6 +230,7 @@ public class AdminServiceImpl implements AdminService {
                         .memberCount(server.getMembers().size())
                         .channelCount(server.getChannels() != null ? server.getChannels().size() : 0)
                         .createdAt(server.getCreatedAt())
+                        .isBanned(server.getIsBanned() != null ? server.getIsBanned() : false)
                         .build())
                 .toList();
 
@@ -204,10 +243,35 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     @Transactional
-    public void deleteServer(Long serverId) {
+    public void deleteServer(Long serverId, Long adminId, String ipAddress) {
         Server server = serverRepository.findByIdWithMembers(serverId)
                 .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
+        String serverName = server.getName();
         serverRepository.delete(server);
+
+        logAudit(adminId, "DELETE_SERVER", "SERVER", serverId, "{\"serverName\": \"" + serverName + "\"}", ipAddress);
+    }
+
+    @Override
+    @Transactional
+    public void banServer(Long serverId, String reason, Long adminId, String ipAddress) {
+        Server server = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
+        server.setIsBanned(true);
+        serverRepository.save(server);
+
+        logAudit(adminId, "BAN_SERVER", "SERVER", serverId, "{\"reason\": \"" + reason + "\", \"serverName\": \"" + server.getName() + "\"}", ipAddress);
+    }
+
+    @Override
+    @Transactional
+    public void unbanServer(Long serverId, Long adminId, String ipAddress) {
+        Server server = serverRepository.findById(serverId)
+                .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
+        server.setIsBanned(false);
+        serverRepository.save(server);
+
+        logAudit(adminId, "UNBAN_SERVER", "SERVER", serverId, "{\"serverName\": \"" + server.getName() + "\"}", ipAddress);
     }
 
     // ===== REPORTED MESSAGES =====
@@ -286,8 +350,8 @@ public class AdminServiceImpl implements AdminService {
         // Handle action
         switch (action) {
             case "DELETE_MESSAGE" -> deleteMessage(report.getMessageId());
-            case "BAN_USER" -> banUserPermanently(report.getReportedBy().getId(), "Banned due to reported message", adminId);
-            case "WARN_USER" -> warnUser(report.getReportedBy().getId(), "Warning from report: " + report.getReason(), adminId);
+            case "BAN_USER" -> banUserPermanently(report.getReportedBy().getId(), "Banned due to reported message", adminId, ipAddress);
+            case "WARN_USER" -> warnUser(report.getReportedBy().getId(), "Warning from report: " + report.getReason(), adminId, ipAddress);
         }
     }
 
@@ -307,7 +371,7 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     @Transactional
-    public void warnUser(Long userId, String reason, Long adminId) {
+    public void warnUser(Long userId, String reason, Long adminId, String ipAddress) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
@@ -317,20 +381,13 @@ public class AdminServiceImpl implements AdminService {
                 .reason(reason)
                 .build());
 
-        // Log audit
-        auditLogRepository.save(AuditLog.builder()
-                .admin(userRepository.getReferenceById(adminId))
-                .action("WARN_USER")
-                .targetType("USER")
-                .targetId(userId)
-                .details("{\"reason\": \"" + reason + "\"}")
-                .build());
+        logAudit(adminId, "WARN_USER", "USER", userId, "{\"reason\": \"" + reason + "\"}", ipAddress);
     }
 
     @Override
     @Transactional
-    public void banUserPermanently(Long userId, String reason, Long adminId) {
-        banUser(userId, reason);
+    public void banUserPermanently(Long userId, String reason, Long adminId, String ipAddress) {
+        banUser(userId, reason, adminId, ipAddress);
     }
 
     // ===== BLACKLIST MANAGEMENT =====
@@ -350,7 +407,7 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     @Transactional
-    public BlacklistKeywordResponse addBlacklistKeyword(String keyword, Long adminId) {
+    public BlacklistKeywordResponse addBlacklistKeyword(String keyword, Long adminId, String ipAddress) {
         if (autoModBlacklistRepository.existsByKeyword(keyword)) {
             throw new IllegalArgumentException("Keyword already exists in blacklist");
         }
@@ -359,22 +416,29 @@ public class AdminServiceImpl implements AdminService {
                 .keyword(keyword)
                 .createdByAdmin(userRepository.getReferenceById(adminId))
                 .build();
+        
+        AutoModBlacklist saved = autoModBlacklistRepository.save(blacklist);
 
-        blacklist = autoModBlacklistRepository.save(blacklist);
+        logAudit(adminId, "ADD_BLACKLIST", "SYSTEM", saved.getId(), "{\"keyword\": \"" + keyword + "\"}", ipAddress);
 
         return BlacklistKeywordResponse.builder()
-                .id(blacklist.getId())
-                .keyword(blacklist.getKeyword())
-                .createdByAdminId(adminId)
-                .createdByAdminName("")
-                .createdAt(blacklist.getCreatedAt())
+                .id(saved.getId())
+                .keyword(saved.getKeyword())
+                .createdByAdminId(saved.getCreatedByAdmin().getId())
+                .createdByAdminName(saved.getCreatedByAdmin().getUserName())
+                .createdAt(saved.getCreatedAt())
                 .build();
     }
 
     @Override
     @Transactional
-    public void removeBlacklistKeyword(Long blacklistId) {
-        autoModBlacklistRepository.deleteById(blacklistId);
+    public void removeBlacklistKeyword(Long blacklistId, Long adminId, String ipAddress) {
+        AutoModBlacklist blacklist = autoModBlacklistRepository.findById(blacklistId)
+                .orElseThrow(() -> new ResourceNotFoundException("Keyword not found"));
+        String keyword = blacklist.getKeyword();
+        autoModBlacklistRepository.delete(blacklist);
+
+        logAudit(adminId, "REMOVE_BLACKLIST", "SYSTEM", blacklistId, "{\"keyword\": \"" + keyword + "\"}", ipAddress);
     }
 
     @Override
@@ -387,13 +451,138 @@ public class AdminServiceImpl implements AdminService {
 
     @Override
     public Page<AuditLogResponse> getAuditLogs(Specification<AuditLog> spec, Pageable pageable) {
-        // TODO: Implement with proper projection
-        return Page.empty();
+        Page<AuditLog> auditLogs = auditLogRepository.findAll(spec, pageable);
+        return auditLogs.map(log -> AuditLogResponse.builder()
+                .id(log.getId())
+                .adminId(log.getAdmin().getId())
+                .adminName(log.getAdmin().getUserName())
+                .action(log.getAction())
+                .targetType(log.getTargetType())
+                .targetId(log.getTargetId())
+                .details(log.getDetails())
+                .ipAddress(log.getIpAddress())
+                .createdAt(log.getCreatedAt())
+                .build());
+    }
+
+    @Override
+    public AuditLogResponse getAuditLogById(Long logId) {
+        AuditLog log = auditLogRepository.findById(logId)
+                .orElseThrow(() -> new ResourceNotFoundException("Audit log not found"));
+        return AuditLogResponse.builder()
+                .id(log.getId())
+                .adminId(log.getAdmin().getId())
+                .adminName(log.getAdmin().getUserName())
+                .action(log.getAction())
+                .targetType(log.getTargetType())
+                .targetId(log.getTargetId())
+                .details(log.getDetails())
+                .ipAddress(log.getIpAddress())
+                .createdAt(log.getCreatedAt())
+                .build();
     }
 
     @Override
     @Transactional
     public void logAudit(AuditLog auditLog) {
         auditLogRepository.save(auditLog);
+    }
+
+    private void logAudit(Long adminId, String action, String targetType, Long targetId, String details, String ipAddress) {
+        AuditLog log = AuditLog.builder()
+                .admin(userRepository.getReferenceById(adminId))
+                .action(action)
+                .targetType(targetType)
+                .targetId(targetId)
+                .details(details)
+                .ipAddress(ipAddress)
+                .build();
+        auditLogRepository.save(log);
+    }
+
+    // ===== NITRO PAYMENT ADMIN =====
+
+    @Override
+    public Page<NitroOrderSummary> getAllOrders(Specification<NitroOrder> spec, Pageable pageable) {
+        Page<NitroOrder> orders = nitroOrderRepository.findAll(spec, pageable);
+        return orders.map(order -> {
+            String userName = "";
+            if (order.getUserId() != null) {
+                Optional<User> user = userRepository.findById(order.getUserId());
+                userName = user.map(User::getUserName).orElse("Unknown");
+            }
+            return NitroOrderSummary.builder()
+                    .id(order.getId())
+                    .txnRef(order.getVnpTxnRef())
+                    .userId(order.getUserId())
+                    .userName(userName)
+                    .amount(order.getAmount() != null ? order.getAmount().intValue() : 0)
+                    .status(order.getStatus())
+                    .paymentMethod("VNPay")
+                    .createdAt(order.getCreatedAt())
+                    .build();
+        });
+    }
+
+    @Override
+    public NitroOrderSummary getOrderByTxnRef(String txnRef) {
+        NitroOrder order = nitroOrderRepository.findByVnpTxnRef(txnRef)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with txnRef: " + txnRef));
+        String userName = "";
+        if (order.getUserId() != null) {
+            Optional<User> user = userRepository.findById(order.getUserId());
+            userName = user.map(User::getUserName).orElse("Unknown");
+        }
+        return NitroOrderSummary.builder()
+                .id(order.getId())
+                .txnRef(order.getVnpTxnRef())
+                .userId(order.getUserId())
+                .userName(userName)
+                .amount(order.getAmount() != null ? order.getAmount().intValue() : 0)
+                .status(order.getStatus())
+                .paymentMethod("VNPay")
+                .createdAt(order.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public void approveOrder(String txnRef, Long adminId, String ipAddress) {
+        NitroOrder order = nitroOrderRepository.findByVnpTxnRef(txnRef)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with txnRef: " + txnRef));
+        order.setStatus("CONFIRMED");
+        nitroOrderRepository.save(order);
+
+        logAudit(adminId, "APPROVE_NITRO", "ORDER", order.getId(), "{\"txnRef\": \"" + txnRef + "\"}", ipAddress);
+    }
+
+    @Override
+    @Transactional
+    public void rejectOrder(String txnRef, Long adminId, String ipAddress) {
+        NitroOrder order = nitroOrderRepository.findByVnpTxnRef(txnRef)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found with txnRef: " + txnRef));
+        order.setStatus("FAILED");
+        nitroOrderRepository.save(order);
+
+        logAudit(adminId, "REJECT_NITRO", "ORDER", order.getId(), "{\"txnRef\": \"" + txnRef + "\"}", ipAddress);
+    }
+
+    @Override
+    public Map<String, Object> getRevenueStats() {
+        Long totalRevenue = nitroOrderRepository.sumConfirmedRevenue();
+        Long totalOrders = nitroOrderRepository.count();
+        Long successCount = nitroOrderRepository.countByStatus("CONFIRMED");
+        Long pendingCount = nitroOrderRepository.countByStatus("PENDING");
+        Long failedCount = nitroOrderRepository.countByStatus("FAILED");
+        double successRate = totalOrders > 0 ? (successCount * 100.0 / totalOrders) : 0;
+
+        Map<String, Object> stats = new java.util.HashMap<>();
+        stats.put("totalRevenue", totalRevenue);
+        stats.put("totalOrders", totalOrders);
+        stats.put("successRate", Math.round(successRate * 10.0) / 10.0);
+        stats.put("successCount", successCount);
+        stats.put("pendingCount", pendingCount);
+        stats.put("failedCount", failedCount);
+        return stats;
     }
 }

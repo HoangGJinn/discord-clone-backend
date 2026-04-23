@@ -45,6 +45,10 @@ public class Server {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    @Column(name = "is_banned")
+    @Builder.Default
+    private Boolean isBanned = false;
+
     @OneToMany(mappedBy = "server", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Category> categories = new ArrayList<>();

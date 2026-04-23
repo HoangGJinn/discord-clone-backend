@@ -48,6 +48,15 @@ public class FriendController {
         return ResponseEntity.ok(results);
     }
 
+    @GetMapping("/api/friends/search")
+    @Operation(summary = "Tìm kiếm bạn bè theo username hoặc tên hiển thị")
+    public ResponseEntity<List<UserSearchResponse>> searchFriends(
+            @RequestParam String keyword,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        List<UserSearchResponse> results = friendService.searchFriends(keyword, userDetails.getId());
+        return ResponseEntity.ok(results);
+    }
+
     // ─── Danh sách bạn bè ──────────────────────────────────────────────────────
 
     @GetMapping("/api/friends")
@@ -55,6 +64,14 @@ public class FriendController {
     public ResponseEntity<List<FriendshipResponse>> getFriends(
             @AuthenticationPrincipal UserDetailsImpl userDetails) {
         return ResponseEntity.ok(friendService.getFriends(userDetails.getId()));
+    }
+
+    @GetMapping("/api/friends/status/{targetUserId}")
+    @Operation(summary = "Lấy trạng thái kết bạn với một user cụ thể")
+    public ResponseEntity<UserSearchResponse> getFriendshipStatus(
+            @PathVariable Long targetUserId,
+            @AuthenticationPrincipal UserDetailsImpl userDetails) {
+        return ResponseEntity.ok(friendService.getFriendshipStatus(userDetails.getId(), targetUserId));
     }
 
     @GetMapping("/api/friends/requests/received")

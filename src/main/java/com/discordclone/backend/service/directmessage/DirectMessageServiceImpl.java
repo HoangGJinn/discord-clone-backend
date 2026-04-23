@@ -2,16 +2,20 @@ package com.discordclone.backend.service.directmessage;
 
 import com.discordclone.backend.dto.request.DirectMessageRequest;
 import com.discordclone.backend.dto.request.EditMessageRequest;
+import com.discordclone.backend.dto.message.MessageAttachment;
 import com.discordclone.backend.dto.response.ConversationResponse;
 import com.discordclone.backend.dto.response.DirectMessageResponse;
 import com.discordclone.backend.dto.response.UserResponse;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.entity.mongo.Conversation;
 import com.discordclone.backend.entity.mongo.DirectMessage;
+import com.discordclone.backend.repository.UserFcmTokenRepository;
 import com.discordclone.backend.repository.UserRepository;
 import com.discordclone.backend.repository.mongo.ConversationRepository;
 import com.discordclone.backend.repository.mongo.DirectMessageRepository;
+import com.discordclone.backend.service.impl.FcmService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,11 +29,26 @@ public class DirectMessageServiceImpl implements DirectMessageService {
     private final DirectMessageRepository directMessageRepository;
     private final ConversationRepository conversationRepository;
     private final UserRepository userRepository;
+    private final UserFcmTokenRepository fcmTokenRepository;
+    private final FcmService fcmService;
 
     @Override
     public DirectMessageResponse sendMessage(Long senderId, DirectMessageRequest request) {
         // Get or create conversation
         ConversationResponse conv = getOrCreateConversation(senderId, request.getReceiverId());
+
+        List<MessageAttachment> attachments = Optional.ofNullable(request.getAttachments())
+            .orElseGet(ArrayList::new)
+            .stream()
+            .filter(Objects::nonNull)
+            .map(item -> MessageAttachment.builder()
+                .url(item.getUrl())
+                .filename(item.getFilename())
+                .contentType(item.getContentType())
+                .size(item.getSize())
+                .build())
+            .filter(item -> item.getUrl() != null && !item.getUrl().isBlank())
+            .toList();
 
         // Build and save message
         DirectMessage message = DirectMessage.builder()
@@ -37,7 +56,6 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .senderId(senderId)
                 .receiverId(request.getReceiverId())
                 .content(request.getContent())
-                .attachments(request.getAttachments() != null ? request.getAttachments() : new ArrayList<>())
                 .replyToId(request.getReplyToId())
                 .createdAt(new Date())
                 .updatedAt(new Date())
@@ -47,7 +65,16 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .reactions(new HashMap<>())
                 .build();
 
+        message.setAttachments(attachments);
+
         DirectMessage saved = directMessageRepository.save(message);
+
+        DirectMessageResponse replyTo = null;
+        if (saved.getReplyToId() != null) {
+            replyTo = directMessageRepository.findById(saved.getReplyToId())
+                .map(r -> mapToResponse(r, null))
+                .orElse(null);
+        }
 
         // Update conversation updatedAt
         conversationRepository.findById(conv.getId()).ifPresent(c -> {
@@ -55,7 +82,13 @@ public class DirectMessageServiceImpl implements DirectMessageService {
             conversationRepository.save(c);
         });
 
-        return mapToResponse(saved, null);
+        // Lấy thông tin người gửi để gắn vào notification
+        User sender = userRepository.findById(senderId).orElse(null);
+
+        // Gửi FCM notification đến receiver (bất đồng bộ)
+        sendDmFcmNotification(saved, sender);
+
+        return mapToResponse(saved, replyTo);
     }
 
     @Override
@@ -82,24 +115,34 @@ public class DirectMessageServiceImpl implements DirectMessageService {
 
     @Override
     public ConversationResponse getOrCreateConversation(Long userId1, Long userId2) {
-        Optional<Conversation> existing = conversationRepository.findByUsers(userId1, userId2);
+        Long normalizedUser1 = Math.min(userId1, userId2);
+        Long normalizedUser2 = Math.max(userId1, userId2);
+
+        Optional<Conversation> existing = conversationRepository.findByUser1IdAndUser2Id(normalizedUser1, normalizedUser2);
 
         Conversation conv;
         if (existing.isPresent()) {
             conv = existing.get();
         } else {
-            conv = Conversation.builder()
-                    .user1Id(Math.min(userId1, userId2))
-                    .user2Id(Math.max(userId1, userId2))
-                    .createdAt(new Date())
-                    .updatedAt(new Date())
-                    .build();
-            conv = conversationRepository.save(conv);
+            try {
+                conv = Conversation.builder()
+                        .user1Id(normalizedUser1)
+                        .user2Id(normalizedUser2)
+                        .createdAt(new Date())
+                        .updatedAt(new Date())
+                        .user1LastReadAt(new Date())
+                        .user2LastReadAt(new Date())
+                        .build();
+                conv = conversationRepository.save(conv);
+            } catch (DuplicateKeyException ex) {
+                conv = conversationRepository.findByUser1IdAndUser2Id(normalizedUser1, normalizedUser2)
+                        .orElseThrow(() -> ex);
+            }
         }
 
         User user1 = userRepository.findById(conv.getUser1Id()).orElse(null);
         User user2 = userRepository.findById(conv.getUser2Id()).orElse(null);
-        
+
         Long otherUserId = conv.getUser1Id().equals(userId1) ? conv.getUser2Id() : conv.getUser1Id();
         User otherUser = userRepository.findById(otherUserId).orElse(null);
 
@@ -112,6 +155,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .otherUserId(otherUserId)
                 .otherUserName(otherUser != null ? otherUser.getDisplayName() : null)
                 .otherUserAvatar(otherUser != null ? otherUser.getAvatarUrl() : null)
+                .unreadCount(0L)
                 .createdAt(conv.getCreatedAt())
                 .updatedAt(conv.getUpdatedAt())
                 .build();
@@ -124,10 +168,22 @@ public class DirectMessageServiceImpl implements DirectMessageService {
 
         for (Conversation conv : conversations) {
             ConversationResponse resp = getOrCreateConversation(conv.getUser1Id(), conv.getUser2Id());
-            
+
             // Get last message
             directMessageRepository.findTopByConversationIdOrderByCreatedAtDesc(conv.getId())
                     .ifPresent(lastMsg -> resp.setLastMessage(mapToResponse(lastMsg, null)));
+
+            Date lastReadAt = Objects.equals(conv.getUser1Id(), userId)
+                    ? conv.getUser1LastReadAt()
+                    : conv.getUser2LastReadAt();
+            long unreadCount = lastReadAt == null
+                    ? directMessageRepository.countByConversationIdAndSenderIdNot(conv.getId(), userId)
+                    : directMessageRepository.countByConversationIdAndSenderIdNotAndCreatedAtAfter(
+                            conv.getId(),
+                            userId,
+                            lastReadAt
+                    );
+            resp.setUnreadCount(unreadCount);
 
             result.add(resp);
         }
@@ -140,6 +196,46 @@ public class DirectMessageServiceImpl implements DirectMessageService {
         });
 
         return result;
+    }
+
+    @Override
+    public void markConversationAsRead(String conversationId, Long userId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found"));
+
+        if (!Objects.equals(conversation.getUser1Id(), userId) && !Objects.equals(conversation.getUser2Id(), userId)) {
+            throw new RuntimeException("User not authorized to mark this conversation as read");
+        }
+
+        Date now = new Date();
+        if (Objects.equals(conversation.getUser1Id(), userId)) {
+            conversation.setUser1LastReadAt(now);
+        } else {
+            conversation.setUser2LastReadAt(now);
+        }
+        conversationRepository.save(conversation);
+    }
+
+    @Override
+    public void markConversationAsUnread(String conversationId, Long userId) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new RuntimeException("Conversation not found"));
+
+        if (!Objects.equals(conversation.getUser1Id(), userId) && !Objects.equals(conversation.getUser2Id(), userId)) {
+            throw new RuntimeException("User not authorized to mark this conversation as unread");
+        }
+
+        Date targetReadAt = directMessageRepository
+                .findTopByConversationIdAndSenderIdNotOrderByCreatedAtDesc(conversationId, userId)
+                .map(message -> new Date(message.getCreatedAt().getTime() - 1))
+                .orElseGet(() -> new Date(System.currentTimeMillis() - 1000));
+
+        if (Objects.equals(conversation.getUser1Id(), userId)) {
+            conversation.setUser1LastReadAt(targetReadAt);
+        } else {
+            conversation.setUser2LastReadAt(targetReadAt);
+        }
+        conversationRepository.save(conversation);
     }
 
     @Override
@@ -177,7 +273,7 @@ public class DirectMessageServiceImpl implements DirectMessageService {
     }
 
     @Override
-    public void addReaction(String messageId, Long userId, String emoji) {
+    public DirectMessageResponse addReaction(String messageId, Long userId, String emoji) {
         DirectMessage message = directMessageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
@@ -188,26 +284,44 @@ public class DirectMessageServiceImpl implements DirectMessageService {
 
         reactions.computeIfAbsent(emoji, k -> new HashSet<>()).add(userId);
         message.setReactions(reactions);
-        directMessageRepository.save(message);
+        DirectMessage saved = directMessageRepository.save(message);
+        return mapToResponse(saved, null);
     }
 
     @Override
-    public void removeReaction(String messageId, Long userId) {
+    public DirectMessageResponse removeReaction(String messageId, Long userId, String emoji) {
         DirectMessage message = directMessageRepository.findById(messageId)
                 .orElseThrow(() -> new RuntimeException("Message not found"));
 
         Map<String, Set<Long>> reactions = message.getReactions();
         if (reactions != null) {
-            reactions.values().forEach(set -> set.remove(userId));
-            reactions.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+            Set<Long> users = reactions.get(emoji);
+            if (users != null) {
+                users.remove(userId);
+                if (users.isEmpty()) {
+                    reactions.remove(emoji);
+                } else {
+                    reactions.put(emoji, users);
+                }
+            }
             message.setReactions(reactions);
-            directMessageRepository.save(message);
+            DirectMessage saved = directMessageRepository.save(message);
+            return mapToResponse(saved, null);
         }
+
+        return mapToResponse(message, null);
     }
 
     private DirectMessageResponse mapToResponse(DirectMessage dm, DirectMessageResponse replyTo) {
-        User sender = userRepository.findById(dm.getSenderId()).orElse(null);
-        User receiver = userRepository.findById(dm.getReceiverId()).orElse(null);
+        User sender = null;
+        User receiver = null;
+
+        if (dm.getSenderId() != null) {
+            sender = userRepository.findById(dm.getSenderId()).orElse(null);
+        }
+        if (dm.getReceiverId() != null) {
+            receiver = userRepository.findById(dm.getReceiverId()).orElse(null);
+        }
 
         return DirectMessageResponse.builder()
                 .id(dm.getId())
@@ -222,10 +336,38 @@ public class DirectMessageServiceImpl implements DirectMessageService {
                 .edited(dm.isEdited())
                 .deleted(dm.isDeleted())
                 .isRead(dm.isRead())
-                .attachments(dm.getAttachments())
+                .attachments(dm.getAttachments() != null ? dm.getAttachments() : Collections.emptyList())
                 .replyToId(dm.getReplyToId())
                 .replyToMessage(replyTo)
                 .reactions(dm.getReactions())
                 .build();
     }
+
+    /**
+     * Gửi FCM notification đến người nhận DM.
+     * Chạy bất đồng bộ — không ảnh hưởng response trả về client.
+     */
+    private void sendDmFcmNotification(DirectMessage saved, User sender) {
+        try {
+            if (saved.getReceiverId() == null) return;
+
+            List<String> tokens = fcmTokenRepository.findFcmTokensByUserId(saved.getReceiverId());
+            if (tokens.isEmpty()) return;
+
+            String senderName = sender != null
+                    ? (sender.getDisplayName() != null ? sender.getDisplayName() : sender.getUserName())
+                    : "Someone";
+
+            fcmService.sendDmNotification(
+                    tokens,
+                    senderName,
+                    String.valueOf(saved.getSenderId()),
+                    saved.getConversationId(),
+                    saved.getContent()
+            );
+        } catch (Exception e) {
+            System.err.println("[FCM] sendDmFcmNotification failed: " + e.getMessage());
+        }
+    }
 }
+

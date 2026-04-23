@@ -8,6 +8,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -36,6 +37,9 @@ public class UserDetailsImpl implements UserDetails {
     @Getter
     private Boolean isActive;
 
+    @Getter
+    private LocalDateTime passwordChangedAt;
+
     public static UserDetailsImpl build(User user) {
         List<GrantedAuthority> authorities = user.getRoles().stream()
                 .map(role -> new SimpleGrantedAuthority(role.getName().name()))
@@ -48,7 +52,8 @@ public class UserDetailsImpl implements UserDetails {
                 user.getPassword(),
                 authorities,
                 user.getIsEmailVerified(),
-                user.getIsActive());
+                user.getIsActive(),
+                user.getPasswordChangedAt());
     }
 
     @Override

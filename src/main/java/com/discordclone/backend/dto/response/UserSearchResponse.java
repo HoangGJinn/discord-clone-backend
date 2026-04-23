@@ -19,6 +19,9 @@ public class UserSearchResponse {
     private String displayName;
     private String avatarUrl;
     private String bio;
+    private String avatarEffectId;
+    private String bannerEffectId;
+    private String cardEffectId;
 
     // Trạng thái mối quan hệ với user đang login
     // null = chưa có mối quan hệ, "PENDING", "ACCEPTED", "REJECTED", "BLOCKED"

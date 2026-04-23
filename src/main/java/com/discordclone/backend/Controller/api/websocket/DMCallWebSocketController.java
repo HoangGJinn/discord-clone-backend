@@ -50,6 +50,8 @@ public class DMCallWebSocketController {
         // Lấy thông tin user
         String callerName = "Unknown";
         String receiverName = "Unknown";
+        String callerAvatar = null;
+        String receiverAvatar = null;
         
         Optional<User> callerOpt = userRepository.findById(Long.parseLong(callerId));
         Optional<User> receiverOpt = userRepository.findById(Long.parseLong(receiverId));
@@ -57,16 +59,31 @@ public class DMCallWebSocketController {
         if (callerOpt.isPresent()) {
             User caller = callerOpt.get();
             callerName = caller.getDisplayName() != null ? caller.getDisplayName() : caller.getUserName();
+            callerAvatar = caller.getAvatarUrl();
         }
         
         if (receiverOpt.isPresent()) {
             User receiver = receiverOpt.get();
             receiverName = receiver.getDisplayName() != null ? receiver.getDisplayName() : receiver.getUserName();
+            receiverAvatar = receiver.getAvatarUrl();
+        }
+        
+        // Xác định loại cuộc gọi
+        DMCallState.CallType callType = DMCallState.CallType.VOICE;
+        if (message.getCallType() != null) {
+            try {
+                callType = DMCallState.CallType.valueOf(message.getCallType().toUpperCase());
+            } catch (Exception e) {
+                // Default to VOICE if invalid
+            }
         }
         
         // Tạo cuộc gọi mới
         DMCallState callState = dmCallService.initiateCall(
-                conversationId, callerId, receiverId, callerName, receiverName);
+                conversationId, callerId, receiverId, 
+                callerName, receiverName, 
+                callerAvatar, receiverAvatar, 
+                callType);
         
         // Tạo response
         DMCallMessage response = DMCallMessage.builder()
@@ -235,7 +252,7 @@ public class DMCallWebSocketController {
      */
     private String generateToken(String channelName, String userId) {
         if (appCertificate == null || appCertificate.isBlank()) {
-            return ""; // Testing mode - không có certificate
+            return "";
         }
         
         try {

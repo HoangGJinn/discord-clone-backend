@@ -1,5 +1,7 @@
 package com.discordclone.backend.security.jwt;
 
+import com.discordclone.backend.exception.AccountNotActiveException;
+import com.discordclone.backend.exception.AccountNotVerifiedException;
 import com.discordclone.backend.security.services.UserDetailsServiceImpl;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -18,6 +20,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Date;
 
 @Component
 @RequiredArgsConstructor
@@ -40,16 +43,36 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jwt = parseJwt(request);
             if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
                 String username = jwtUtils.getUserNameFromJwtToken(jwt);
+                Date issuedAt = jwtUtils.getIssuedAtFromJwtToken(jwt);
 
                 UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                if (userDetails instanceof com.discordclone.backend.security.services.UserDetailsImpl userDetailsImpl) {
+                    if (userDetailsImpl.getPasswordChangedAt() != null
+                            && issuedAt != null
+                            && issuedAt.toInstant().isBefore(
+                                    userDetailsImpl.getPasswordChangedAt()
+                                            .atZone(java.time.ZoneId.systemDefault())
+                                            .toInstant())) {
+                        logger.warn("JWT rejected because password was changed for user {}", username);
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
+                }
+
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
+        } catch (AccountNotActiveException | AccountNotVerifiedException e) {
+            logger.error("Authentication failed: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"message\": \"" + e.getMessage() + "\"}");
+            return;
         } catch (Exception e) {
-            logger.error("Cannot set user authentication: {}", e);
+            logger.error("Cannot set user authentication: {}", e.getMessage());
         }
 
         filterChain.doFilter(request, response);

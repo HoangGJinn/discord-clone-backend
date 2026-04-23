@@ -16,7 +16,7 @@ public interface ServerService {
     ServerResponse getServerById(Long serverId);
 
     // Lấy thông tin server đầy đủ (bao gồm categories, channels, members)
-    ServerResponse getServerDetails(Long serverId);
+    ServerResponse getServerDetails(Long serverId, Long userId);
 
     // Cập nhật server
     ServerResponse updateServer(Long serverId, UpdateServerRequest request, Long userId);
@@ -38,4 +38,23 @@ public interface ServerService {
 
     // Lấy danh sách thành viên của server
     List<ServerMemberResponse> getServerMembers(Long serverId);
+
+    // Chuyển quyền sở hữu server
+    void transferOwnership(Long serverId, Long currentOwnerId, Long newOwnerId);
+
+    // Kick thành viên (xóa khỏi server)
+    void kickMember(Long serverId, Long targetUserId, Long requesterId);
+
+    // Ban thành viên (đánh dấu banned, xóa khỏi server)
+    void banMember(Long serverId, Long targetUserId, Long requesterId);
+
+    // Timeout thành viên trong X phút (cấm chat)
+    void timeoutMember(Long serverId, Long targetUserId, Long requesterId, int minutes);
+
+    // Gỡ timeout thành viên
+    void removeTimeout(Long serverId, Long targetUserId, Long requesterId);
+
+    // Cập nhật vai trò thành viên
+    void updateMemberRole(Long serverId, Long targetUserId, Long requesterId, com.discordclone.backend.entity.enums.MemberRole newRole);
 }
+

@@ -1,5 +1,7 @@
 package com.discordclone.backend.dto.response;
 
+import com.discordclone.backend.dto.message.MessageAttachment;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Builder;
 import lombok.Data;
 
@@ -18,14 +20,16 @@ public class DirectMessageResponse {
     private UserResponse sender;
     private UserResponse receiver;
     private String content;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
     private Date createdAt;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
     private Date updatedAt;
 
     private boolean edited;
     private boolean deleted;
     private boolean isRead;
 
-    private List<String> attachments;
+    private List<MessageAttachment> attachments;
     private String replyToId;
     private DirectMessageResponse replyToMessage;
 

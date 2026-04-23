@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.discordclone.backend.dto.request.ChangePasswordRequest;
 import com.discordclone.backend.dto.request.UpdateProfileRequest;
 import com.discordclone.backend.dto.response.UserResponse;
 import com.discordclone.backend.entity.enums.UserStatus;
@@ -13,6 +14,7 @@ import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.service.presence.PresenceService;
 import com.discordclone.backend.service.user.UserService;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -41,6 +43,20 @@ public class UserController {
 
         User updatedUser = userService.updateProfile(principal.getName(), request);
         return ResponseEntity.ok(UserResponse.from(updatedUser));
+    }
+
+    @PutMapping("/api/users/me/password")
+    public ResponseEntity<?> changeMyPassword(@Valid @RequestBody ChangePasswordRequest request, Principal principal) {
+        if (principal == null || principal.getName() == null) {
+            return ResponseEntity.status(401).build();
+        }
+
+        userService.changePassword(
+                principal.getName(),
+                request.getCurrentPassword(),
+                request.getNewPassword(),
+                request.getConfirmNewPassword());
+        return ResponseEntity.ok().body(java.util.Map.of("message", "Password changed successfully"));
     }
 
     @PutMapping("/api/users/me/status")

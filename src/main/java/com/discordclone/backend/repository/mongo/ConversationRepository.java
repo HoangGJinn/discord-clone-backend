@@ -11,6 +11,8 @@ import java.util.Optional;
 @Repository
 public interface ConversationRepository extends MongoRepository<Conversation, String> {
 
+    Optional<Conversation> findByUser1IdAndUser2Id(Long user1Id, Long user2Id);
+
     @Query("{ $or: [ { 'user1Id': ?0, 'user2Id': ?1 }, { 'user1Id': ?1, 'user2Id': ?0 } ] }")
     Optional<Conversation> findByUsers(Long userId1, Long userId2);
 

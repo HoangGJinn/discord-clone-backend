@@ -1,15 +1,24 @@
 package com.discordclone.backend.Controller.api;
 
+import com.discordclone.backend.dto.response.MessageSearchResult;
 import com.discordclone.backend.dto.response.SearchResponse;
+import com.discordclone.backend.entity.mongo.ChannelMessage;
+import com.discordclone.backend.entity.mongo.DirectMessage;
+import com.discordclone.backend.repository.UserRepository;
+import com.discordclone.backend.repository.mongo.ChannelMessageRepository;
+import com.discordclone.backend.repository.mongo.DirectMessageRepository;
 import com.discordclone.backend.service.search.SearchService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequiredArgsConstructor
@@ -18,6 +27,9 @@ import java.util.List;
 public class SearchController {
 
     private final SearchService searchService;
+    private final DirectMessageRepository directMessageRepository;
+    private final ChannelMessageRepository channelMessageRepository;
+    private final UserRepository userRepository;
 
     /**
      * Tìm kiếm tổng hợp - tìm trong tất cả entities
@@ -101,5 +113,80 @@ public class SearchController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         }
+    }
+
+    @Operation(summary = "Search messages in a DM conversation")
+    @GetMapping("/dm-messages")
+    public ResponseEntity<List<MessageSearchResult>> searchDmMessages(
+            @Parameter(description = "Conversation ID") @RequestParam String conversationId,
+            @Parameter(description = "Search keyword") @RequestParam String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        if (keyword == null || keyword.trim().length() < 1) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Page<DirectMessage> results = directMessageRepository
+                .findByConversationIdAndContentContainingIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+                        conversationId, keyword.trim(), PageRequest.of(page, size));
+
+        List<MessageSearchResult> dto = results.getContent().stream().map(msg -> {
+            String senderName = "Unknown";
+            String senderAvatar = null;
+            String senderAvatarEffectId = null;
+            if (msg.getSenderId() != null) {
+                var userOpt = userRepository.findById(msg.getSenderId());
+                if (userOpt.isPresent()) {
+                    var u = userOpt.get();
+                    senderName = u.getDisplayName() != null ? u.getDisplayName() : u.getUserName();
+                    senderAvatar = u.getAvatarUrl();
+                    senderAvatarEffectId = u.getAvatarEffectId();
+                }
+            }
+            return MessageSearchResult.builder()
+                    .id(msg.getId())
+                    .content(msg.getContent())
+                    .senderName(senderName)
+                    .senderAvatar(senderAvatar)
+                    .senderAvatarEffectId(senderAvatarEffectId)
+                    .createdAt(msg.getCreatedAt())
+                    .conversationId(msg.getConversationId())
+                    .build();
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(dto);
+    }
+
+    @Operation(summary = "Search messages in a Channel")
+    @GetMapping("/channel-messages")
+    public ResponseEntity<List<MessageSearchResult>> searchChannelMessages(
+            @Parameter(description = "Channel ID") @RequestParam Long channelId,
+            @Parameter(description = "Search keyword") @RequestParam String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+
+        if (keyword == null || keyword.trim().length() < 1) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Page<ChannelMessage> results = channelMessageRepository
+                .findByChannelIdAndContentContainingIgnoreCaseAndDeletedFalseOrderByCreatedAtDesc(
+                        channelId, keyword.trim(), PageRequest.of(page, size));
+
+        List<MessageSearchResult> dto = results.getContent().stream().map(msg -> {
+            String senderAvatarEffectId = msg.getSenderAvatarEffectId();
+            return MessageSearchResult.builder()
+                    .id(msg.getId())
+                    .content(msg.getContent())
+                    .senderName(msg.getSenderName() != null ? msg.getSenderName() : "Unknown")
+                    .senderAvatar(msg.getSenderAvatar())
+                    .senderAvatarEffectId(senderAvatarEffectId)
+                    .createdAt(msg.getCreatedAt())
+                    .channelId(msg.getChannelId())
+                    .build();
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(dto);
     }
 }

@@ -32,7 +32,7 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private String password;
 
     @Column(name = "display_name")
@@ -60,10 +60,22 @@ public class User {
     @Column(name = "is_email_verified")
     private Boolean isEmailVerified;
 
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status")
     @Builder.Default
     private UserStatus status = UserStatus.OFFLINE;
+
+    @Column(name = "avatar_effect_id")
+    private String avatarEffectId;
+
+    @Column(name = "banner_effect_id")
+    private String bannerEffectId;
+
+    @Column(name = "card_effect_id")
+    private String cardEffectId;
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))

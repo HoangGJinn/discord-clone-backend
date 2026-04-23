@@ -19,5 +19,9 @@ public interface UserService {
 
     User updateProfile(String userName, UpdateProfileRequest request);
 
+    void changePassword(String userName, String currentPassword, String newPassword, String confirmNewPassword);
+
     Optional<User> findById(Long id);
+
+    User loginWithGoogle(String idToken);
 }

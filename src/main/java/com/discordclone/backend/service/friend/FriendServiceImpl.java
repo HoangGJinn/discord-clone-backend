@@ -7,7 +7,9 @@ import com.discordclone.backend.entity.jpa.Friendship;
 import com.discordclone.backend.entity.jpa.User;
 import com.discordclone.backend.exception.ResourceNotFoundException;
 import com.discordclone.backend.repository.FriendshipRepository;
+import com.discordclone.backend.repository.UserFcmTokenRepository;
 import com.discordclone.backend.repository.UserRepository;
+import com.discordclone.backend.service.impl.FcmService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,18 +25,20 @@ public class FriendServiceImpl implements FriendService {
 
     private final FriendshipRepository friendshipRepository;
     private final UserRepository userRepository;
+    private final UserFcmTokenRepository fcmTokenRepository;
+    private final FcmService fcmService;
 
-    // ─── Tìm kiếm user ─────────────────────────────────────────────────────────
+    // --- Search users ---
     @Override
     @Transactional(readOnly = true)
     public List<UserSearchResponse> searchUsers(String keyword, Long currentUserId) {
         if (keyword == null || keyword.trim().length() < 2) {
-            throw new IllegalArgumentException("Từ khóa tìm kiếm phải có ít nhất 2 ký tự");
+            throw new IllegalArgumentException("Search keyword must have at least 2 characters");
         }
 
         String trimmed = keyword.trim();
 
-        // Dùng JPQL query từ UserRepository (case-insensitive, hiệu quả hơn findAll)
+        // Use JPQL query from UserRepository (case-insensitive, more efficient than findAll)
         List<User> users = userRepository.searchByKeyword(trimmed).stream()
                 .filter(u -> !u.getId().equals(currentUserId))
                 .collect(Collectors.toList());
@@ -44,32 +48,55 @@ public class FriendServiceImpl implements FriendService {
                 .collect(Collectors.toList());
     }
 
-    // ─── Gửi lời mời ───────────────────────────────────────────────────────────
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserSearchResponse> searchFriends(String keyword, Long currentUserId) {
+        if (keyword == null || keyword.trim().length() < 2) {
+            throw new IllegalArgumentException("Keyword must be at least 2 characters");
+        }
+
+        String trimmed = keyword.trim();
+
+        // Get list of accepted friendships
+        List<Friendship> friendships = friendshipRepository.findAcceptedFriendships(currentUserId);
+
+        return friendships.stream()
+                .map(f -> f.getSender().getId().equals(currentUserId) ? f.getReceiver() : f.getSender())
+                .filter(u -> {
+                    String username = u.getUserName() == null ? "" : u.getUserName().toLowerCase();
+                    String displayName = u.getDisplayName() == null ? "" : u.getDisplayName().toLowerCase();
+                    return username.contains(trimmed.toLowerCase()) || displayName.contains(trimmed.toLowerCase());
+                })
+                .map(u -> buildUserSearchResponse(u, currentUserId))
+                .collect(Collectors.toList());
+    }
+
+    // --- Send friend request ---
     @Override
     public FriendshipResponse sendFriendRequest(Long senderId, Long receiverId) {
         if (senderId.equals(receiverId)) {
-            throw new IllegalArgumentException("Không thể gửi lời mời cho chính mình");
+            throw new IllegalArgumentException("Cannot send a friend request to yourself");
         }
 
         User sender = getUserById(senderId);
         User receiver = getUserById(receiverId);
 
-        // Kiểm tra đã có mối quan hệ chưa
+        // Check if friendship already exists
         Optional<Friendship> existing = friendshipRepository.findBetweenUsers(senderId, receiverId);
         if (existing.isPresent()) {
             FriendshipStatus status = existing.get().getStatus();
             switch (status) {
                 case ACCEPTED:
-                    throw new IllegalStateException("Hai người đã là bạn bè");
+                    throw new IllegalArgumentException("You are already friends");
                 case PENDING:
-                    throw new IllegalStateException("Lời mời kết bạn đã được gửi, đang chờ xác nhận");
+                    throw new IllegalArgumentException("Friend request already sent, waiting for confirmation");
                 case BLOCKED:
-                    throw new IllegalStateException("Không thể gửi lời mời do bị chặn");
+                    throw new IllegalArgumentException("Cannot send a friend request because you are blocked");
                 case REJECTED:
-                    // Cho phép gửi lại sau khi bị từ chối — reset về PENDING
+                    // Allow sending again after being rejected - reset to PENDING
                     Friendship old = existing.get();
                     old.setStatus(FriendshipStatus.PENDING);
-                    // Đặt người gửi hiện tại làm sender
+                    // Set current sender as sender
                     old.setSender(sender);
                     old.setReceiver(receiver);
                     return FriendshipResponse.from(friendshipRepository.save(old));
@@ -82,59 +109,78 @@ public class FriendServiceImpl implements FriendService {
                 .status(FriendshipStatus.PENDING)
                 .build();
 
-        return FriendshipResponse.from(friendshipRepository.save(friendship));
+        FriendshipResponse saved = FriendshipResponse.from(friendshipRepository.save(friendship));
+
+        // Gửi FCM notification đến người nhận lời mời kết bạn
+        try {
+            List<String> tokens = fcmTokenRepository.findFcmTokensByUserId(receiverId);
+            if (!tokens.isEmpty()) {
+                String senderName = sender.getDisplayName() != null
+                        ? sender.getDisplayName() : sender.getUserName();
+                fcmService.sendFriendRequestNotification(
+                        tokens,
+                        senderName,
+                        String.valueOf(senderId),
+                        String.valueOf(saved.getId())
+                );
+            }
+        } catch (Exception e) {
+            System.err.println("[FCM] sendFriendRequestNotification failed: " + e.getMessage());
+        }
+
+        return saved;
     }
 
-    // ─── Chấp nhận lời mời ─────────────────────────────────────────────────────
+    // --- Accept friend request ---
     @Override
     public FriendshipResponse acceptFriendRequest(Long friendshipId, Long currentUserId) {
         Friendship f = getFriendshipById(friendshipId);
 
-        // Chỉ người nhận mới được chấp nhận
+        // Only receiver can accept
         if (!f.getReceiver().getId().equals(currentUserId)) {
-            throw new IllegalStateException("Bạn không có quyền chấp nhận lời mời này");
+            throw new IllegalArgumentException("You don't have permission to accept this request");
         }
         if (f.getStatus() != FriendshipStatus.PENDING) {
-            throw new IllegalStateException("Lời mời không ở trạng thái chờ xác nhận");
+            throw new IllegalArgumentException("Friend request is not in pending state");
         }
 
         f.setStatus(FriendshipStatus.ACCEPTED);
         return FriendshipResponse.from(friendshipRepository.save(f));
     }
 
-    // ─── Từ chối lời mời ───────────────────────────────────────────────────────
+    // --- Reject friend request ---
     @Override
     public FriendshipResponse rejectFriendRequest(Long friendshipId, Long currentUserId) {
         Friendship f = getFriendshipById(friendshipId);
 
-        // Chỉ người nhận mới được từ chối
+        // Only receiver can reject
         if (!f.getReceiver().getId().equals(currentUserId)) {
-            throw new IllegalStateException("Bạn không có quyền từ chối lời mời này");
+            throw new IllegalArgumentException("You don't have permission to reject this request");
         }
         if (f.getStatus() != FriendshipStatus.PENDING) {
-            throw new IllegalStateException("Lời mời không ở trạng thái chờ xác nhận");
+            throw new IllegalArgumentException("Friend request is not in pending state");
         }
 
         f.setStatus(FriendshipStatus.REJECTED);
         return FriendshipResponse.from(friendshipRepository.save(f));
     }
 
-    // ─── Hủy lời mời đã gửi ───────────────────────────────────────────────────
+    // --- Cancel sent friend request ---
     @Override
     public void cancelFriendRequest(Long friendshipId, Long currentUserId) {
         Friendship f = getFriendshipById(friendshipId);
 
         if (!f.getSender().getId().equals(currentUserId)) {
-            throw new IllegalStateException("Bạn không có quyền hủy lời mời này");
+            throw new IllegalArgumentException("You don't have permission to cancel this request");
         }
         if (f.getStatus() != FriendshipStatus.PENDING) {
-            throw new IllegalStateException("Chỉ có thể hủy lời mời đang chờ xác nhận");
+            throw new IllegalArgumentException("Can only cancel pending requests");
         }
 
         friendshipRepository.delete(f);
     }
 
-    // ─── Xóa bạn bè ────────────────────────────────────────────────────────────
+    // --- Unfriend ---
     @Override
     public void unfriend(Long friendshipId, Long currentUserId) {
         Friendship f = getFriendshipById(friendshipId);
@@ -143,16 +189,16 @@ public class FriendServiceImpl implements FriendService {
                 || f.getReceiver().getId().equals(currentUserId);
 
         if (!isParticipant) {
-            throw new IllegalStateException("Bạn không có quyền thực hiện hành động này");
+            throw new IllegalArgumentException("You don't have permission to perform this action");
         }
         if (f.getStatus() != FriendshipStatus.ACCEPTED) {
-            throw new IllegalStateException("Hai người không phải bạn bè");
+            throw new IllegalArgumentException("You are not friends");
         }
 
         friendshipRepository.delete(f);
     }
 
-    // ─── Block user ─────────────────────────────────────────────────────────────
+    // --- Block user ---
     @Override
     public FriendshipResponse blockUser(Long targetUserId, Long currentUserId) {
         User blocker = getUserById(currentUserId);
@@ -174,7 +220,7 @@ public class FriendServiceImpl implements FriendService {
         return FriendshipResponse.from(friendshipRepository.save(f));
     }
 
-    // ─── Danh sách bạn bè ──────────────────────────────────────────────────────
+    // --- Get friends list ---
     @Override
     @Transactional(readOnly = true)
     public List<FriendshipResponse> getFriends(Long userId) {
@@ -183,7 +229,7 @@ public class FriendServiceImpl implements FriendService {
                 .collect(Collectors.toList());
     }
 
-    // ─── Lời mời nhận được ─────────────────────────────────────────────────────
+    // â”€â”€â”€ Lá»i má»i nháº­n Ä‘Æ°á»£c â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @Override
     @Transactional(readOnly = true)
     public List<FriendshipResponse> getPendingRequests(Long userId) {
@@ -192,7 +238,7 @@ public class FriendServiceImpl implements FriendService {
                 .collect(Collectors.toList());
     }
 
-    // ─── Lời mời đã gửi ────────────────────────────────────────────────────────
+    // â”€â”€â”€ Lá»i má»i Ä‘Ã£ gá»­i â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     @Override
     @Transactional(readOnly = true)
     public List<FriendshipResponse> getSentRequests(Long userId) {
@@ -201,16 +247,23 @@ public class FriendServiceImpl implements FriendService {
                 .collect(Collectors.toList());
     }
 
-    // ─── Helpers ───────────────────────────────────────────────────────────────
+    @Override
+    @Transactional(readOnly = true)
+    public UserSearchResponse getFriendshipStatus(Long currentUserId, Long targetUserId) {
+        User targetUser = getUserById(targetUserId);
+        return buildUserSearchResponse(targetUser, currentUserId);
+    }
+
+    // --- Helpers ---
 
     private User getUserById(Long id) {
         return userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User không tồn tại: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + id));
     }
 
     private Friendship getFriendshipById(Long id) {
         return friendshipRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy mối quan hệ bạn bè"));
+                .orElseThrow(() -> new ResourceNotFoundException("Friendship not found"));
     }
 
     private boolean matchKeyword(User u, String keyword) {
@@ -241,6 +294,9 @@ public class FriendServiceImpl implements FriendService {
                 .displayName(user.getDisplayName())
                 .avatarUrl(user.getAvatarUrl())
                 .bio(user.getBio())
+                .avatarEffectId(user.getAvatarEffectId())
+                .bannerEffectId(user.getBannerEffectId())
+                .cardEffectId(user.getCardEffectId())
                 .friendshipStatus(status)
                 .friendshipId(friendshipId)
                 .isSender(isSender)

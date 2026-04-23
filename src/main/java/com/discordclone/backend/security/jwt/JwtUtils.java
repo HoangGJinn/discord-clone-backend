@@ -46,6 +46,16 @@ public class JwtUtils {
                 .compact();
     }
 
+    public String generateJwtTokenFromUsername(String username, List<String> roles) {
+        return Jwts.builder()
+                .subject(username)
+                .claim("roles", roles)
+                .issuedAt(new Date())
+                .expiration(new Date((new Date()).getTime() + jwtExpirationMs))
+                .signWith(key(), Jwts.SIG.HS256)
+                .compact();
+    }
+
     public String getUserNameFromJwtToken(String token) {
         return Jwts.parser()
                 .verifyWith(key())
@@ -53,6 +63,15 @@ public class JwtUtils {
                 .parseSignedClaims(token)
                 .getPayload()
                 .getSubject();
+    }
+
+    public Date getIssuedAtFromJwtToken(String token) {
+        return Jwts.parser()
+                .verifyWith(key())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .getIssuedAt();
     }
 
     public boolean validateJwtToken(String authToken) {

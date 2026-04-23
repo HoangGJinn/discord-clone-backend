@@ -163,6 +163,12 @@ public class SearchServiceImpl implements SearchService {
                 .role(member.getRole() != null ? member.getRole().name() : null)
                 .serverId(member.getServer() != null ? member.getServer().getId() : null)
                 .serverName(member.getServer() != null ? member.getServer().getName() : null)
+                .avatarUrl(member.getUser() != null ? member.getUser().getAvatarUrl() : null)
+                .status(member.getUser() != null && member.getUser().getStatus() != null 
+                        ? member.getUser().getStatus().name() : null)
+                .avatarEffectId(member.getUser() != null ? member.getUser().getAvatarEffectId() : null)
+                .bannerEffectId(member.getUser() != null ? member.getUser().getBannerEffectId() : null)
+                .cardEffectId(member.getUser() != null ? member.getUser().getCardEffectId() : null)
                 .build();
     }
 }
